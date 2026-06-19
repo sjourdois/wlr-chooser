@@ -21,8 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libwayland-dev libxkbcommon-dev libfontconfig-1-dev \
-            libegl1-mesa-dev libgl1-mesa-dev
+            libwayland-dev libxkbcommon-dev libfontconfig-1-dev
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Clippy

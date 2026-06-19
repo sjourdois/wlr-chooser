@@ -12,10 +12,9 @@ installers = ["shell"]
 # Target platforms to build apps for (Linux/wlroots only).
 targets = ["x86_64-unknown-linux-gnu"]
 
-# System libraries needed to build on the CI runners.
+# System libraries needed to build on the CI runners (EGL/GL are loaded at
+# runtime via dlopen, so they are not build dependencies).
 [dist.dependencies.apt]
 libwayland-dev = '*'
 libxkbcommon-dev = '*'
 libfontconfig-1-dev = '*'
-libegl1-mesa-dev = '*'
-libgl1-mesa-dev = '*'
