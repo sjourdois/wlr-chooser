@@ -1,0 +1,14 @@
+# Catppuccin Macchiato theme for wlr-chooser.
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#181926cc"
+bg             = "#1e2030"
+card           = "#24273a"
+tile           = "#1e2030"
+tile-hover     = "#363a4f"
+tile-selected  = "#494d64"
+thumb          = "#181926"
+text           = "#cad3f5"
+text-dim       = "#6e738d"
+accent         = "#8aadf4"
+screen-accent  = "#7dc4e4"  # sapphire
+window-accent  = "#c6a0f6"  # mauve

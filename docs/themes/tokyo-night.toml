@@ -1,0 +1,14 @@
+# Tokyo Night theme for wlr-chooser.
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#16161ecc"
+bg             = "#1a1b26"
+card           = "#24283b"
+tile           = "#1a1b26"
+tile-hover     = "#292e42"
+tile-selected  = "#3b4261"
+thumb          = "#16161e"
+text           = "#c0caf5"
+text-dim       = "#565f89"
+accent         = "#7aa2f7"
+screen-accent  = "#7dcfff"  # cyan
+window-accent  = "#bb9af7"  # magenta

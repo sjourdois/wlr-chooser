@@ -1,0 +1,23 @@
+# Maintainer: Stéphane Jourdois <stephane@jourdois.fr>
+# Rename to PKGBUILD when publishing the wlr-chooser-bin AUR package.
+pkgname=wlr-chooser-bin
+_pkgname=wlr-chooser
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Graphical window & screen picker for wlroots screencast portals (prebuilt binary)'
+arch=('x86_64')
+url='https://github.com/sjourdois/wlr-chooser'
+license=('MIT' 'Apache-2.0')
+depends=('wayland' 'libxkbcommon' 'fontconfig' 'libglvnd')
+optdepends=('noto-fonts-cjk: render CJK (Japanese/Chinese/Korean) text')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+_archive="$_pkgname-x86_64-unknown-linux-gnu"
+source=("$_archive-$pkgver.tar.xz::$url/releases/download/v$pkgver/$_archive.tar.xz")
+sha256sums=('SKIP') # run `updpkgsums` to fill before publishing
+
+package() {
+	# cargo-dist archives contain the binary inside a top-level <target> directory.
+	install -Dm755 "$_archive/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+	install -Dm644 "$_archive/README.md" "$pkgdir/usr/share/doc/$_pkgname/README.md" 2>/dev/null || true
+}

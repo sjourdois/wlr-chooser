@@ -1,0 +1,61 @@
+[package]
+name = "wlr-chooser"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Graphical window & screen picker for wlroots screencast portals (xdg-desktop-portal-wlr)"
+authors = ["Stéphane Jourdois <stephane@jourdois.fr>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/sjourdois/wlr-chooser"
+homepage = "https://github.com/sjourdois/wlr-chooser"
+keywords = ["wayland", "wlroots", "screencast", "portal", "sway"]
+categories = ["gui", "command-line-utilities"]
+exclude = ["/.github", "/docs/screenshots", "/packaging"]
+
+[package.metadata.deb]
+maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
+section = "utils"
+priority = "optional"
+license-file = ["LICENSE-MIT", "0"]
+# libEGL is dlopen'd at runtime (not linked), so add it on top of the auto-detected deps.
+depends = "$auto, libegl1"
+recommends = "fonts-noto-cjk"
+extended-description = """\
+A graphical window & screen picker for wlroots screencast portals \
+(xdg-desktop-portal-wlr): a rofi-like overlay with live thumbnails to pick a \
+window or monitor to share."""
+assets = [
+    ["target/release/wlr-chooser", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/wlr-chooser/README.md", "644"],
+    ["docs/themes/*.toml", "usr/share/doc/wlr-chooser/themes/", "644"],
+]
+
+[dependencies]
+anyhow = "1"
+egui = "0.32"
+# Client Wayland bas niveau pour la capture toplevel (ext-image-copy-capture)
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+rustix = { version = "1.1.4", features = ["fs", "mm"] }
+image = { version = "0.25.9", default-features = false, features = ["png"] }
+i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10.0"
+rust-embed = "8.11.0"
+unic-langid = "0.9.6"
+resvg = { version = "0.45.1", default-features = false }
+toml = { version = "1.1.2", default-features = false, features = ["parse", "serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+smithay-client-toolkit = "0.20.0"
+wayland-egl = "0.32.11"
+khronos-egl = { version = "6.0.0", features = ["dynamic"] }
+glow = "0.16" # pinned: must match the glow version egui_glow 0.32 uses
+egui_glow = "0.32.3"
+libloading = "0.8.9"
+clap = { version = "4.6.1", features = ["derive"] }
+fontdb = { version = "0.23.0", default-features = false, features = ["fontconfig"] }
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = true

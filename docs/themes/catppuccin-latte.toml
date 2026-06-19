@@ -1,0 +1,14 @@
+# Catppuccin Latte theme for wlr-chooser (light).
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#4c4f6966"
+bg             = "#e6e9ef"
+card           = "#eff1f5"
+tile           = "#e6e9ef"
+tile-hover     = "#ccd0da"
+tile-selected  = "#bcc0cc"
+thumb          = "#dce0e8"
+text           = "#4c4f69"
+text-dim       = "#9ca0b0"
+accent         = "#1e66f5"
+screen-accent  = "#209fb5"  # sapphire
+window-accent  = "#8839ef"  # mauve

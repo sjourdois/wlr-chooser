@@ -1,0 +1,14 @@
+# Catppuccin Frappé theme for wlr-chooser.
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#232634cc"
+bg             = "#292c3c"
+card           = "#303446"
+tile           = "#292c3c"
+tile-hover     = "#414559"
+tile-selected  = "#51576d"
+thumb          = "#232634"
+text           = "#c6d0f5"
+text-dim       = "#737994"
+accent         = "#8caaee"
+screen-accent  = "#85c1dc"  # sapphire
+window-accent  = "#ca9ee6"  # mauve

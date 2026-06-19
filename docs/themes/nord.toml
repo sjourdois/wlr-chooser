@@ -1,0 +1,14 @@
+# Nord theme for wlr-chooser. https://www.nordtheme.com/
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#242933cc"
+bg             = "#2e3440"
+card           = "#3b4252"
+tile           = "#2e3440"
+tile-hover     = "#434c5e"
+tile-selected  = "#4c566a"
+thumb          = "#242933"
+text           = "#d8dee9"
+text-dim       = "#7b88a1"
+accent         = "#88c0d0"
+screen-accent  = "#81a1c1"  # frost blue
+window-accent  = "#b48ead"  # aurora purple

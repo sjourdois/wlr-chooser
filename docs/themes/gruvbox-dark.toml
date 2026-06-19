@@ -1,0 +1,14 @@
+# Gruvbox (dark) theme for wlr-chooser.
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#1d2021cc"
+bg             = "#282828"
+card           = "#32302f"
+tile           = "#282828"
+tile-hover     = "#3c3836"
+tile-selected  = "#504945"
+thumb          = "#1d2021"
+text           = "#ebdbb2"
+text-dim       = "#928374"
+accent         = "#83a598"
+screen-accent  = "#83a598"  # blue
+window-accent  = "#d3869b"  # purple

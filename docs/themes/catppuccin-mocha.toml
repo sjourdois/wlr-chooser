@@ -1,0 +1,16 @@
+# Catppuccin Mocha theme for wlr-chooser.
+# Copy to ~/.config/wlr-chooser/theme.toml (or $XDG_CONFIG_HOME/wlr-chooser/theme.toml).
+# Palette: https://github.com/catppuccin/catppuccin
+
+backdrop       = "#11111baa"  # crust, dimmed (overlay behind the card)
+bg             = "#181825"    # mantle
+card           = "#1e1e2e"    # base
+tile           = "#181825"    # mantle
+tile-hover     = "#313244"    # surface0
+tile-selected  = "#45475a"    # surface1
+thumb          = "#11111b"    # crust
+text           = "#cdd6f4"    # text
+text-dim       = "#6c7086"    # overlay0
+accent         = "#89b4fa"    # blue
+screen-accent  = "#74c7ec"    # sapphire  (outline for screens)
+window-accent  = "#cba6f7"    # mauve     (outline for windows)

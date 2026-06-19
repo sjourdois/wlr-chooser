@@ -1,0 +1,14 @@
+# Dracula theme for wlr-chooser. https://draculatheme.com/
+# Copy or symlink to ~/.config/wlr-chooser/theme.toml.
+backdrop       = "#191a21cc"
+bg             = "#282a36"
+card           = "#343746"
+tile           = "#282a36"
+tile-hover     = "#44475a"
+tile-selected  = "#565872"
+thumb          = "#1d1e26"
+text           = "#f8f8f2"
+text-dim       = "#6272a4"
+accent         = "#bd93f9"
+screen-accent  = "#8be9fd"  # cyan
+window-accent  = "#ff79c6"  # pink
