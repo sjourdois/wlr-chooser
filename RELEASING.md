@@ -30,9 +30,9 @@ Repository secrets needed on GitHub:
    - The `publish` workflow publishes the crate to **crates.io** automatically.
    - The cargo-dist `release` workflow builds the binaries + installer and creates
      the GitHub Release.
-3. **`.deb`:** `cargo deb` produces `target/debian/wlr-chooser_X.Y.Z_amd64.deb`;
-   attach it to the GitHub Release.
-5. **AUR:** in `packaging/aur/`, bump `pkgver`, run `updpkgsums` to fill the
+   - The `deb` workflow builds the `.deb` and attaches it to that release.
+3. **AUR** (once an AUR account exists): in `packaging/aur/`, bump `pkgver`, run
+   `updpkgsums` to fill the
    `sha256sums`, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), and
    push to the `wlr-chooser` and `wlr-chooser-bin` AUR repositories. The
    `-bin` package's `package()` paths may need adjusting to match the actual

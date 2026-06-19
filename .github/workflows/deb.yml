@@ -1,0 +1,36 @@
+name: Debian package
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev libxkbcommon-dev libfontconfig-dev
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+      - name: Build .deb
+        run: cargo deb
+      - name: Attach to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # the cargo-dist release job creates the release; wait for it.
+          for _ in $(seq 1 30); do
+            gh release view "$tag" >/dev/null 2>&1 && break
+            echo "waiting for release $tag…"; sleep 20
+          done
+          gh release upload "$tag" target/debian/*.deb --clobber

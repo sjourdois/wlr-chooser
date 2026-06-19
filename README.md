@@ -36,12 +36,11 @@ window or a monitor with a click.
 
 ### From a package
 
-- **Arch (AUR):** `paru -S wlr-chooser` (build from source) or
-  `paru -S wlr-chooser-bin` (prebuilt release binary).
-- **Debian/Ubuntu:** grab the `.deb` from the
+- **crates.io:** `cargo install wlr-chooser`.
+- **Debian/Ubuntu:** download the `.deb` from the
   [latest release](https://github.com/sjourdois/wlr-chooser/releases/latest) and
   `sudo apt install ./wlr-chooser_*.deb`.
-- **crates.io:** `cargo install wlr-chooser`.
+- **Arch (AUR):** _coming soon._
 
 ### Prebuilt binary
 
