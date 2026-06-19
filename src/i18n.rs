@@ -59,7 +59,7 @@ mod tests {
         );
         for lang in langs {
             loader
-                .load_languages(&Localizations, &[lang.clone()])
+                .load_languages(&Localizations, std::slice::from_ref(&lang))
                 .unwrap_or_else(|e| panic!("catalog {lang} failed to load: {e}"));
         }
     }
