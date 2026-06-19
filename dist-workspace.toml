@@ -17,4 +17,4 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dist.dependencies.apt]
 libwayland-dev = '*'
 libxkbcommon-dev = '*'
-libfontconfig-1-dev = '*'
+libfontconfig-dev = '*'
