@@ -59,3 +59,8 @@ fontdb = { version = "0.23.0", default-features = false, features = ["fontconfig
 opt-level = 2
 lto = "thin"
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

@@ -1,0 +1,21 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell"]
+# Target platforms to build apps for (Linux/wlroots only).
+targets = ["x86_64-unknown-linux-gnu"]
+
+# System libraries needed to build on the CI runners.
+[dist.dependencies.apt]
+libwayland-dev = '*'
+libxkbcommon-dev = '*'
+libfontconfig-1-dev = '*'
+libegl1-mesa-dev = '*'
+libgl1-mesa-dev = '*'
