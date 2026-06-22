@@ -1,0 +1,49 @@
+[package]
+name = "wlr-chooser"
+description = "Graphical window & screen picker for wlroots screencast portals (xdg-desktop-portal-wlr)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["wayland", "wlroots", "screencast", "portal", "sway"]
+categories = ["gui", "command-line-utilities"]
+
+[[bin]]
+name = "wlr-chooser"
+path = "src/main.rs"
+
+[dependencies]
+wlr-capture = { path = "../wlr-capture", version = "1.2.0", default-features = false }
+anyhow.workspace = true
+egui.workspace = true
+smithay-client-toolkit.workspace = true
+wayland-client.workspace = true
+rustix.workspace = true
+image.workspace = true
+clap.workspace = true
+
+[features]
+default = ["gpu"]
+gpu = ["wlr-capture/gpu"]
+
+[package.metadata.deb]
+maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
+section = "utils"
+priority = "optional"
+license-file = ["../../LICENSE-MIT", "0"]
+# libEGL is dlopen'd at runtime (not linked), so add it on top of the auto-detected deps.
+depends = "$auto, libegl1"
+recommends = "fonts-noto-cjk"
+extended-description = """\
+A graphical window & screen picker for wlroots screencast portals \
+(xdg-desktop-portal-wlr): a rofi-like overlay with live thumbnails to pick a \
+window or monitor to share."""
+assets = [
+    ["../../target/release/wlr-chooser", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/wlr-chooser/README.md", "644"],
+    ["../../docs/themes/*.toml", "usr/share/doc/wlr-chooser/themes/", "644"],
+]

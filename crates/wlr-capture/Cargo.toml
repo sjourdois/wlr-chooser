@@ -1,0 +1,44 @@
+[package]
+name = "wlr-capture"
+description = "Reusable wlroots capture engine + shared UI toolkit for the wlr-utils tools."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+
+[lib]
+name = "wlr_capture"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+egui.workspace = true
+# egui → GLES rendering core (render.rs), shared by every windowing host.
+egui_glow.workspace = true
+glow.workspace = true
+khronos-egl.workspace = true
+wayland-egl.workspace = true
+libloading.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+wayland-protocols-wlr.workspace = true
+rustix.workspace = true
+image.workspace = true
+i18n-embed.workspace = true
+rust-embed.workspace = true
+unic-langid.workspace = true
+resvg.workspace = true
+toml.workspace = true
+serde.workspace = true
+fontdb.workspace = true
+gbm = { workspace = true, optional = true }
+
+[features]
+default = ["gpu"]
+# Zero-copy GPU capture: allocate dma-bufs via gbm and import them as GL textures.
+# Without it, only the CPU shm path is built (no gbm / libgbm-dev dependency).
+gpu = ["dep:gbm"]

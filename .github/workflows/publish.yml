@@ -23,14 +23,20 @@ jobs:
       - name: Publish to crates.io
         if: env.CARGO_REGISTRY_TOKEN != ''
         run: |
-          # Log outside the repo so cargo publish doesn't see a dirty working tree.
-          log="$RUNNER_TEMP/publish-err.log"
-          if cargo publish 2>"$log"; then
-            echo "published"
-          elif grep -qi 'already' "$log"; then
-            echo "this version is already on crates.io — skipping"
-            cat "$log"
-          else
-            cat "$log" >&2
-            exit 1
-          fi
+          # Publish in dependency order: the shared lib first, then the binaries
+          # (which depend on it). A version already on crates.io is skipped.
+          # Logs go outside the repo so cargo doesn't see a dirty working tree.
+          for pkg in wlr-capture wlr-chooser wlr-pip; do
+            log="$RUNNER_TEMP/publish-$pkg.log"
+            if cargo publish -p "$pkg" 2>"$log"; then
+              echo "$pkg published"
+            elif grep -qi 'already' "$log"; then
+              echo "$pkg: this version is already on crates.io — skipping"
+              cat "$log"
+            else
+              cat "$log" >&2
+              exit 1
+            fi
+            # Give the index a moment to update so dependents resolve the new lib.
+            sleep 15
+          done

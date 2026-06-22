@@ -692,26 +692,6 @@ dependencies = [
  "sys-locale",
  "thiserror 1.0.69",
  "unic-langid",
- "walkdir",
-]
-
-[[package]]
-name = "i18n-embed-fl"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e598ed73b67db92f61e04672e599eef2991a262a40e1666735b8a86d2e7e9f30"
-dependencies = [
- "find-crate",
- "fluent",
- "fluent-syntax",
- "i18n-config",
- "i18n-embed",
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "strsim",
- "syn",
- "unic-langid",
 ]
 
 [[package]]
@@ -1005,28 +985,6 @@ dependencies = [
  "pin-project-lite",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "proc-macro-error-attr2"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
-name = "proc-macro-error2"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
-dependencies = [
- "proc-macro-error-attr2",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1830,18 +1788,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
 
 [[package]]
-name = "wlr-chooser"
-version = "1.1.0"
+name = "wlr-capture"
+version = "1.2.0"
 dependencies = [
  "anyhow",
- "clap",
  "egui",
  "egui_glow",
  "fontdb",
  "gbm",
  "glow",
  "i18n-embed",
- "i18n-embed-fl",
  "image",
  "khronos-egl",
  "libloading",
@@ -1849,13 +1805,45 @@ dependencies = [
  "rust-embed",
  "rustix",
  "serde",
- "smithay-client-toolkit",
  "toml 1.1.2+spec-1.1.0",
  "unic-langid",
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
  "wayland-protocols-wlr",
+]
+
+[[package]]
+name = "wlr-chooser"
+version = "1.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "egui",
+ "image",
+ "rustix",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "wlr-capture",
+]
+
+[[package]]
+name = "wlr-pip"
+version = "1.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "egui",
+ "egui_glow",
+ "glow",
+ "image",
+ "khronos-egl",
+ "libloading",
+ "rustix",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "wayland-egl",
+ "wlr-capture",
 ]
 
 [[package]]

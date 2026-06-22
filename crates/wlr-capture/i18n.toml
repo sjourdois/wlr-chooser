@@ -1,0 +1,8 @@
+fallback_language = "en"
+
+[fluent]
+assets_dir = "i18n"
+# Catalog filename stem: i18n/<lang>/<domain>.ftl. Pinned (rather than derived from
+# the crate name) so the shared catalogs stay `wlr_capture.ftl` regardless of which
+# crate loads them.
+domain = "wlr_capture"

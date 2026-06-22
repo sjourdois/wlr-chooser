@@ -21,8 +21,10 @@ jobs:
             libwayland-dev libxkbcommon-dev libfontconfig-dev libgbm-dev
       - name: Install cargo-deb
         run: cargo install cargo-deb
-      - name: Build .deb
-        run: cargo deb
+      - name: Build .deb packages
+        run: |
+          cargo deb -p wlr-chooser
+          cargo deb -p wlr-pip
       - name: Attach to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,46 +1,28 @@
-[package]
-name = "wlr-chooser"
-version = "1.1.0"
+[workspace]
+members = ["crates/wlr-capture", "crates/wlr-chooser", "crates/wlr-pip"]
+resolver = "3"
+
+# Shared package metadata for every crate in the wlr-utils workspace.
+[workspace.package]
+version = "1.2.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Graphical window & screen picker for wlroots screencast portals (xdg-desktop-portal-wlr)"
 authors = ["Stéphane Jourdois <stephane@jourdois.fr>"]
 license = "MIT OR Apache-2.0"
-readme = "README.md"
-repository = "https://github.com/sjourdois/wlr-chooser"
-homepage = "https://github.com/sjourdois/wlr-chooser"
-keywords = ["wayland", "wlroots", "screencast", "portal", "sway"]
-categories = ["gui", "command-line-utilities"]
-exclude = ["/.github", "/docs/screenshots", "/packaging"]
+repository = "https://github.com/sjourdois/wlr-utils"
+homepage = "https://github.com/sjourdois/wlr-utils"
 
-[package.metadata.deb]
-maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
-section = "utils"
-priority = "optional"
-license-file = ["LICENSE-MIT", "0"]
-# libEGL is dlopen'd at runtime (not linked), so add it on top of the auto-detected deps.
-depends = "$auto, libegl1"
-recommends = "fonts-noto-cjk"
-extended-description = """\
-A graphical window & screen picker for wlroots screencast portals \
-(xdg-desktop-portal-wlr): a rofi-like overlay with live thumbnails to pick a \
-window or monitor to share."""
-assets = [
-    ["target/release/wlr-chooser", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/wlr-chooser/README.md", "644"],
-    ["docs/themes/*.toml", "usr/share/doc/wlr-chooser/themes/", "644"],
-]
-
-[dependencies]
+# Centralised dependency versions; crates opt in with `dep.workspace = true`.
+[workspace.dependencies]
 anyhow = "1"
 egui = "0.32"
-# Client Wayland bas niveau pour la capture toplevel (ext-image-copy-capture)
+# Low-level Wayland client for toplevel capture (ext-image-copy-capture).
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 rustix = { version = "1.1.4", features = ["fs", "mm", "event"] }
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
-i18n-embed-fl = "0.10.0"
 rust-embed = "8.11.0"
 unic-langid = "0.9.6"
 resvg = { version = "0.45.1", default-features = false }
@@ -54,14 +36,7 @@ egui_glow = "0.32.3"
 libloading = "0.8.9"
 clap = { version = "4.6.1", features = ["derive"] }
 fontdb = { version = "0.23.0", default-features = false, features = ["fontconfig"] }
-gbm = { version = "0.18.0", default-features = false, optional = true }
-wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
-
-[features]
-default = ["gpu"]
-# Zero-copy GPU capture: allocate dma-bufs via gbm and import them as GL textures.
-# Without it, only the CPU shm path is built (no gbm / libgbm-dev dependency).
-gpu = ["dep:gbm"]
+gbm = { version = "0.18.0", default-features = false }
 
 [profile.release]
 opt-level = 2

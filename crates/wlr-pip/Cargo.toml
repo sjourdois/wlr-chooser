@@ -1,0 +1,53 @@
+[package]
+name = "wlr-pip"
+description = "Floating always-on-top live mirror (picture-in-picture) of a wlroots window."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["wayland", "wlroots", "picture-in-picture", "mirror", "sway"]
+categories = ["gui", "command-line-utilities"]
+
+[[bin]]
+name = "wlr-pip"
+path = "src/main.rs"
+
+[dependencies]
+wlr-capture = { path = "../wlr-capture", version = "1.2.0", default-features = false }
+anyhow.workspace = true
+egui.workspace = true
+egui_glow.workspace = true
+glow.workspace = true
+khronos-egl.workspace = true
+wayland-egl.workspace = true
+libloading.workspace = true
+smithay-client-toolkit.workspace = true
+wayland-client.workspace = true
+rustix.workspace = true
+image.workspace = true
+clap.workspace = true
+
+[features]
+default = ["gpu"]
+gpu = ["wlr-capture/gpu"]
+
+[package.metadata.deb]
+maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
+section = "utils"
+priority = "optional"
+license-file = ["../../LICENSE-MIT", "0"]
+# libEGL is dlopen'd at runtime (not linked), so add it on top of the auto-detected deps.
+depends = "$auto, libegl1"
+recommends = "wlr-chooser"
+extended-description = """\
+A floating, always-on-top live mirror (picture-in-picture) of a wlroots window. \
+Pick a window with wlr-chooser (or pass its identifier) and keep watching it even \
+when it is occluded or on another workspace."""
+assets = [
+    ["../../target/release/wlr-pip", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/wlr-pip/README.md", "644"],
+]
