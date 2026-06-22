@@ -1,6 +1,6 @@
 [package]
 name = "wlr-chooser"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Graphical window & screen picker for wlroots screencast portals (xdg-desktop-portal-wlr)"
@@ -37,7 +37,7 @@ egui = "0.32"
 # Client Wayland bas niveau pour la capture toplevel (ext-image-copy-capture)
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
-rustix = { version = "1.1.4", features = ["fs", "mm"] }
+rustix = { version = "1.1.4", features = ["fs", "mm", "event"] }
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10.0"
@@ -54,6 +54,14 @@ egui_glow = "0.32.3"
 libloading = "0.8.9"
 clap = { version = "4.6.1", features = ["derive"] }
 fontdb = { version = "0.23.0", default-features = false, features = ["fontconfig"] }
+gbm = { version = "0.18.0", default-features = false, optional = true }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+
+[features]
+default = ["gpu"]
+# Zero-copy GPU capture: allocate dma-bufs via gbm and import them as GL textures.
+# Without it, only the CPU shm path is built (no gbm / libgbm-dev dependency).
+gpu = ["dep:gbm"]
 
 [profile.release]
 opt-level = 2

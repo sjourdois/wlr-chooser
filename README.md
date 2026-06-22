@@ -21,6 +21,10 @@ window or a monitor with a click.
 - **Captures any window** — including ones on other workspaces/outputs — via the
   compositor's native toplevel capture (`ext-image-copy-capture-v1`), not
   screen-region grabs. Off-screen windows are real previews, not icons.
+- **Live thumbnails that actually move**: previews refresh in real time, and on
+  the GPU path (default) the dma-buf is imported straight as a texture — no
+  read-back, near-zero CPU. Falls back to CPU shm where the GPU path isn't usable.
+- **Doubles as a window switcher** (`--switch`): pick a window to focus it.
 - **Native Wayland** (no XWayland), built in Rust with [egui]; opens near-instantly.
 - **Themeable** (8 ready palettes incl. Catppuccin), **localised** (13 languages,
   with CJK font fallback), and a configurable thumbnail grid.
@@ -30,7 +34,10 @@ window or a monitor with a click.
 - A wlroots-based compositor exposing `ext-image-copy-capture-v1`,
   `ext-image-capture-source-v1`, `ext-foreign-toplevel-list-v1` and
   `wlr-layer-shell` (Sway ≥ 1.12 / wlroots ≥ 0.20).
-- `xdg-desktop-portal-wlr` ≥ 0.8.
+- `xdg-desktop-portal-wlr` ≥ 0.8 (for the screencast chooser use).
+- For the **GPU path** (default): a working EGL/GLES driver and `libgbm`
+  (ships with Mesa). It falls back to CPU automatically if unavailable.
+- For the **`--switch`** window-switcher: `zwlr-foreign-toplevel-management-v1`.
 
 ## Install
 
@@ -56,9 +63,13 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 ### From source
 
 ```sh
-cargo build --release
+cargo build --release          # GPU path on by default; needs libgbm-dev to build
 install -Dm755 target/release/wlr-chooser ~/.local/bin/wlr-chooser
 ```
+
+The `gpu` feature (on by default) enables zero-copy dma-buf capture and needs
+`libgbm-dev` at build time (`libgbm` at runtime, from Mesa). For a pure-CPU
+build with no gbm dependency, use `cargo build --release --no-default-features`.
 
 ## Set up the portal
 
@@ -83,6 +94,8 @@ focused output. You can pass options in `chooser_cmd`, e.g.
 -w, --windows          Show only windows
 -o, --outputs          Show only screens          (alias: --screens)
     --both             Show both (default)
+    --switch           Window switcher: focus the picked window (implies --windows)
+    --layout <LAYOUT>  Switcher presentation: full (full-screen, default) | compact
     --include-system   Include windows with no app-id (system surfaces)
     --grid COLSxROWS   Fixed grid of that many thumbnails (e.g. 4x3)
 -h, --help             Print help
@@ -91,6 +104,26 @@ focused output. You can pass options in `chooser_cmd`, e.g.
 
 In the overlay: type to filter, arrows to move, Enter/click to pick, Escape or
 click-outside to cancel, and the tab bar switches All / Windows / Screens.
+
+## Window switcher
+
+`wlr-chooser --switch` turns the picker into a live alt-tab / exposé: a grid of
+**live** window thumbnails (updating in real time, even for windows on other
+workspaces); picking one **focuses** it instead of printing to stdout.
+
+Two presentations via `--layout`:
+
+- `full` (default) — a full-screen, mission-control grid that dims the desktop.
+- `compact` — the centred rofi-like card.
+
+Bind it in your compositor, e.g. Sway:
+
+```
+bindsym $mod+Tab  exec wlr-chooser --switch                  # full-screen
+bindsym Alt+Tab   exec wlr-chooser --switch --layout compact # compact card
+```
+
+Only one switcher opens at a time (re-pressing the keybind is a no-op).
 
 ## Output contract
 

@@ -5,7 +5,8 @@
 //! surface. Only this windowing layer differs from a normal app; the whole UI
 //! (`ui::App`) is reused unchanged.
 
-use crate::ui::App;
+use crate::ui::{App, DmabufImporter};
+use crate::wl;
 use khronos_egl as egl;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -27,6 +28,9 @@ use smithay_client_toolkit::{
         },
     },
 };
+use std::collections::HashMap;
+use std::ffi::c_void;
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::time::Instant;
 use wayland_client::{
@@ -37,6 +41,184 @@ use wayland_client::{
 
 type Egl = egl::Instance<egl::Dynamic<libloading::Library, egl::EGL1_4>>;
 
+// --- dma-buf → GL texture import (EGL_EXT_image_dma_buf_import) ---
+//
+// The capture thread hands us a dma-buf fd; we wrap it in an EGLImage and bind it
+// to a GL texture egui can sample — zero copy, no readback. Function pointers are
+// loaded at runtime via eglGetProcAddress (khronos-egl has no typed bindings for
+// these extensions).
+
+type EglImage = *mut c_void;
+const EGL_LINUX_DMA_BUF_EXT: u32 = 0x3270;
+const EGL_WIDTH: i32 = 0x3057;
+const EGL_HEIGHT: i32 = 0x3056;
+const EGL_LINUX_DRM_FOURCC_EXT: i32 = 0x3271;
+const EGL_DMA_BUF_PLANE0_FD_EXT: i32 = 0x3272;
+const EGL_DMA_BUF_PLANE0_OFFSET_EXT: i32 = 0x3273;
+const EGL_DMA_BUF_PLANE0_PITCH_EXT: i32 = 0x3274;
+const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: i32 = 0x3443;
+const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: i32 = 0x3444;
+const EGL_ATTRIB_NONE: i32 = 0x3038;
+const GL_TEXTURE_2D: u32 = 0x0DE1;
+const GL_TEXTURE_SWIZZLE_A: u32 = 0x8E45;
+const GL_ONE: i32 = 1;
+
+type EglCreateImageKhr =
+    unsafe extern "system" fn(*mut c_void, *mut c_void, u32, *mut c_void, *const i32) -> EglImage;
+type EglDestroyImageKhr = unsafe extern "system" fn(*mut c_void, EglImage) -> u32;
+type GlEglImageTargetTexture2dOes = unsafe extern "system" fn(u32, EglImage);
+
+/// Resolved EGL/GL extension entry points + the EGL display, for dma-buf import.
+#[derive(Clone, Copy)]
+struct DmabufEgl {
+    display: *mut c_void,
+    create_image: EglCreateImageKhr,
+    destroy_image: EglDestroyImageKhr,
+    image_target: GlEglImageTargetTexture2dOes,
+}
+
+/// Load the dma-buf import entry points. `None` if the driver lacks them (then we
+/// have no GPU display path and tiles fall back to whatever shm provided).
+fn load_dmabuf_egl(egl: &Egl, display: egl::Display) -> Option<DmabufEgl> {
+    let create = egl.get_proc_address("eglCreateImageKHR")?;
+    let destroy = egl.get_proc_address("eglDestroyImageKHR")?;
+    let target = egl.get_proc_address("glEGLImageTargetTexture2DOES")?;
+    // Same calling convention (extern "system"), just typed signatures.
+    Some(unsafe {
+        DmabufEgl {
+            display: display.as_ptr(),
+            create_image: std::mem::transmute::<extern "system" fn(), EglCreateImageKhr>(create),
+            destroy_image: std::mem::transmute::<extern "system" fn(), EglDestroyImageKhr>(destroy),
+            image_target: std::mem::transmute::<extern "system" fn(), GlEglImageTargetTexture2dOes>(
+                target,
+            ),
+        }
+    })
+}
+
+/// A dma-buf imported as a GL texture, cached per source key.
+struct NativeTex {
+    image: EglImage,
+    tex: glow::Texture,
+    id: egui::TextureId,
+    size: egui::Vec2,
+}
+
+/// Host-side [`DmabufImporter`]: turns a dma-buf fd into a GL texture egui can
+/// sample. Borrows the painter (to register native textures) and the persistent
+/// texture cache; `egl` is `None` if the driver can't import dma-bufs.
+struct HostImporter<'a> {
+    egl: Option<DmabufEgl>,
+    gl: Arc<glow::Context>,
+    painter: &'a mut egui_glow::Painter,
+    cache: &'a mut HashMap<String, NativeTex>,
+}
+
+impl DmabufImporter for HostImporter<'_> {
+    fn import(
+        &mut self,
+        key: &str,
+        frame: wl::DmabufFrame,
+    ) -> Option<(egui::TextureId, egui::Vec2)> {
+        use glow::HasContext as _;
+        let egl = self.egl?;
+        let size = egui::vec2(frame.width as f32, frame.height as f32);
+        let attribs: [i32; 17] = [
+            EGL_WIDTH,
+            frame.width as i32,
+            EGL_HEIGHT,
+            frame.height as i32,
+            EGL_LINUX_DRM_FOURCC_EXT,
+            frame.fourcc as i32,
+            EGL_DMA_BUF_PLANE0_FD_EXT,
+            frame.fd.as_raw_fd(),
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT,
+            frame.offset as i32,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT,
+            frame.stride as i32,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT,
+            (frame.modifier & 0xffff_ffff) as i32,
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT,
+            (frame.modifier >> 32) as i32,
+            EGL_ATTRIB_NONE,
+        ];
+        // EGL_NO_CONTEXT for dma-buf import; EGL dups the fd, so we may close ours.
+        let image = unsafe {
+            (egl.create_image)(
+                egl.display,
+                std::ptr::null_mut(),
+                EGL_LINUX_DMA_BUF_EXT,
+                std::ptr::null_mut(),
+                attribs.as_ptr(),
+            )
+        };
+        if image.is_null() {
+            return None;
+        }
+
+        let ckey = key.to_string();
+        // Refresh the existing texture in place (the dma-buf is the same kernel
+        // object; just rebind the fresh image), keeping a stable egui texture id.
+        if let Some(nt) = self.cache.get_mut(&ckey) {
+            unsafe {
+                self.gl.bind_texture(GL_TEXTURE_2D, Some(nt.tex));
+                (egl.image_target)(GL_TEXTURE_2D, image);
+                self.gl.bind_texture(GL_TEXTURE_2D, None);
+                (egl.destroy_image)(egl.display, nt.image);
+            }
+            nt.image = image;
+            nt.size = size;
+            return Some((nt.id, nt.size));
+        }
+
+        // First frame for this slot: create the GL texture and register it.
+        let tex = unsafe {
+            let t = self.gl.create_texture().ok()?;
+            self.gl.bind_texture(GL_TEXTURE_2D, Some(t));
+            let lin = glow::LINEAR as i32;
+            let clamp = glow::CLAMP_TO_EDGE as i32;
+            self.gl
+                .tex_parameter_i32(GL_TEXTURE_2D, glow::TEXTURE_MIN_FILTER, lin);
+            self.gl
+                .tex_parameter_i32(GL_TEXTURE_2D, glow::TEXTURE_MAG_FILTER, lin);
+            self.gl
+                .tex_parameter_i32(GL_TEXTURE_2D, glow::TEXTURE_WRAP_S, clamp);
+            self.gl
+                .tex_parameter_i32(GL_TEXTURE_2D, glow::TEXTURE_WRAP_T, clamp);
+            // Captured buffers are XRGB (no real alpha): the X byte is undefined,
+            // so force sampled alpha to 1, else egui blends with garbage alpha.
+            self.gl
+                .tex_parameter_i32(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
+            (egl.image_target)(GL_TEXTURE_2D, image);
+            self.gl.bind_texture(GL_TEXTURE_2D, None);
+            t
+        };
+        let id = self.painter.register_native_texture(tex);
+        self.cache.insert(
+            ckey,
+            NativeTex {
+                image,
+                tex,
+                id,
+                size,
+            },
+        );
+        Some((id, size))
+    }
+
+    fn forget(&mut self, key: &str) {
+        use glow::HasContext as _;
+        let Some(egl) = self.egl else { return };
+        if let Some(nt) = self.cache.remove(key) {
+            self.painter.free_texture(nt.id);
+            unsafe {
+                self.gl.delete_texture(nt.tex);
+                (egl.destroy_image)(egl.display, nt.image);
+            }
+        }
+    }
+}
+
 /// EGL/GL state, created once the surface has its first size.
 struct Gpu {
     egl: Egl,
@@ -45,6 +227,8 @@ struct Gpu {
     context: egl::Context,
     _egl_window: wayland_egl::WlEglSurface,
     painter: egui_glow::Painter,
+    /// dma-buf import entry points, if the driver supports them.
+    dmabuf_egl: Option<DmabufEgl>,
 }
 
 struct State {
@@ -59,6 +243,8 @@ struct State {
     egui_ctx: egui::Context,
     app: App,
     gpu: Option<Gpu>,
+    /// dma-buf textures imported for display, keyed by source key.
+    dmabuf_tex: HashMap<String, NativeTex>,
 
     // logical size (points) and integer scale.
     width: u32,
@@ -108,6 +294,7 @@ pub fn run(app: App) -> anyhow::Result<()> {
         egui_ctx,
         app,
         gpu: None,
+        dmabuf_tex: HashMap::new(),
         width: 0,
         height: 0,
         scale: 1,
@@ -191,6 +378,10 @@ impl State {
             })
         };
         let painter = egui_glow::Painter::new(Arc::new(gl), "", None, false).expect("egui_glow");
+        let dmabuf_egl = load_dmabuf_egl(&egl, display);
+        if dmabuf_egl.is_none() {
+            eprintln!("wlr-chooser: import dma-buf EGL indisponible (affichage GPU désactivé)");
+        }
 
         self.gpu = Some(Gpu {
             egl,
@@ -199,6 +390,7 @@ impl State {
             context,
             _egl_window: egl_window,
             painter,
+            dmabuf_egl,
         });
     }
 
@@ -230,8 +422,25 @@ impl State {
             ..Default::default()
         };
 
-        let full = self.egui_ctx.run(raw_input, |ctx| self.app.run_ui(ctx));
-        let prims = self.egui_ctx.tessellate(full.shapes, ppp);
+        // Run the UI. GPU dma-buf frames are imported here via the host importer,
+        // since that needs the painter + GL context (which live in `gpu`).
+        let (prims, textures_delta) = {
+            let gl = gpu.painter.gl().clone();
+            let mut importer = HostImporter {
+                egl: gpu.dmabuf_egl,
+                gl,
+                painter: &mut gpu.painter,
+                cache: &mut self.dmabuf_tex,
+            };
+            let app = &mut self.app;
+            let full = self
+                .egui_ctx
+                .run(raw_input, |ctx| app.run_ui(ctx, &mut importer));
+            (
+                self.egui_ctx.tessellate(full.shapes, ppp),
+                full.textures_delta,
+            )
+        };
 
         unsafe {
             use glow::HasContext as _;
@@ -242,7 +451,7 @@ impl State {
             gl.clear(glow::COLOR_BUFFER_BIT);
         }
         gpu.painter
-            .paint_and_update_textures([pw, ph], ppp, &prims, &full.textures_delta);
+            .paint_and_update_textures([pw, ph], ppp, &prims, &textures_delta);
         gpu.egl.swap_buffers(gpu.display, gpu.surface).ok();
     }
 

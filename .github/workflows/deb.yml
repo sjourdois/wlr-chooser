@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libwayland-dev libxkbcommon-dev libfontconfig-dev
+            libwayland-dev libxkbcommon-dev libfontconfig-dev libgbm-dev
       - name: Install cargo-deb
         run: cargo install cargo-deb
       - name: Build .deb
