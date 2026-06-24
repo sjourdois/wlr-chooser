@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Compositor compatibility**: a [`COMPATIBILITY.md`](COMPATIBILITY.md) matrix
+  (which protocols each compositor needs and supports), a new **`wlr-peek doctor`**
+  that reports which capture protocols the running compositor advertises (and whether
+  capture / focus sources will work), and focus backends for **Hyprland** (`hyprctl`)
+  and **niri** (`niri msg`) alongside Sway — so `-a` / `--current-output` work there
+  too (niri exposes no per-window geometry, so its `-a` is unavailable; use `-g` /
+  `--current-output`).
 - **`wlr-peek watch`**: a change monitor. Streams a source (region `-g`/`-s`, output
   `-o`/`--current-output`, or window `-w`/`--pick-window`/`-a`) and fires `--on
   change` or `--on idle` (stable for `--for`). `--threshold PCT` ignores changes

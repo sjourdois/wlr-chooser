@@ -39,6 +39,8 @@ enum Cmd {
     /// Find text on screen (OCR) and print where it is — a visual grep.
     #[cfg(feature = "ocr")]
     Grep(GrepArgs),
+    /// Report which capture protocols the current compositor supports.
+    Doctor,
     /// Internal: serve a clipboard selection read from stdin. Spawned detached by
     /// `color --clipboard`; not meant to be run by hand.
     #[command(hide = true)]
@@ -87,6 +89,7 @@ fn main() {
         Cmd::Watch(args) => watch(args),
         #[cfg(feature = "ocr")]
         Cmd::Grep(args) => grep(args),
+        Cmd::Doctor => doctor(),
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {
@@ -614,6 +617,74 @@ fn focused_output() -> Result<String> {
     backend
         .focused_output()
         .with_context(|| format!("no focused output detected (via {})", backend.name()))
+}
+
+/// Report the capture-relevant Wayland globals the current compositor advertises,
+/// so users can tell at a glance whether (and how well) the suite will work here.
+fn doctor() -> Result<()> {
+    // (interface, what it enables). Order roughly by importance.
+    const CHECKS: &[(&str, &str)] = &[
+        ("ext_image_copy_capture_manager_v1", "capture frames (core)"),
+        (
+            "ext_output_image_capture_source_manager_v1",
+            "capture an output (core)",
+        ),
+        (
+            "ext_foreign_toplevel_image_capture_source_manager_v1",
+            "capture a window",
+        ),
+        (
+            "ext_foreign_toplevel_list_v1",
+            "enumerate windows (chooser, -w)",
+        ),
+        ("zxdg_output_manager_v1", "accurate output geometry"),
+        (
+            "zwlr_layer_shell_v1",
+            "overlays: region select, loupe, switcher",
+        ),
+        ("zwlr_data_control_manager_v1", "clipboard copy (-c)"),
+        ("zwp_linux_dmabuf_v1", "zero-copy GPU capture"),
+        (
+            "zwp_keyboard_shortcuts_inhibit_manager_v1",
+            "switcher keyboard grab",
+        ),
+    ];
+
+    let globals = wl::advertised_globals().context("listing Wayland globals")?;
+    let version = |iface: &str| globals.iter().find(|(n, _)| n == iface).map(|(_, v)| *v);
+
+    println!("Compositor capabilities (advertised Wayland globals):\n");
+    for (iface, desc) in CHECKS {
+        match version(iface) {
+            Some(v) => println!("  ✓ {iface} (v{v}) — {desc}"),
+            None => println!("  ✗ {iface} — {desc}"),
+        }
+    }
+
+    let core = version("ext_image_copy_capture_manager_v1").is_some()
+        && version("ext_output_image_capture_source_manager_v1").is_some();
+    println!();
+    if core {
+        println!("Screen capture: supported.");
+    } else {
+        println!(
+            "Screen capture: UNSUPPORTED — needs ext-image-copy-capture-v1 \
+             (wlroots ≥ 0.18 / Sway ≥ 1.10; not on Mutter/KWin)."
+        );
+    }
+
+    // Focus IPC (active-window / current-output) needs the `focus` engine feature,
+    // which `wlr-peek` pulls in via `ocr`/`watch`.
+    #[cfg(any(feature = "ocr", feature = "watch"))]
+    match wlr_capture::focus::detect() {
+        Some(b) => println!(
+            "Focus IPC: {} detected (-a / --current-output work).",
+            b.name()
+        ),
+        None => println!("Focus IPC: none detected (-a / --current-output unavailable)."),
+    }
+
+    Ok(())
 }
 
 /// The `clipboard-serve` daemon body: read the blob from stdin, then serve it.

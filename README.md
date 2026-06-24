@@ -25,7 +25,9 @@ with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
 
 - A wlroots compositor exposing `ext-image-copy-capture-v1`,
   `ext-image-capture-source-v1`, `ext-foreign-toplevel-list-v1` (and
-  `wlr-layer-shell` for `wlr-chooser`) — Sway ≥ 1.12 / wlroots ≥ 0.20.
+  `wlr-layer-shell` for `wlr-chooser`) — Sway ≥ 1.12 / wlroots ≥ 0.20. See
+  [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix (Hyprland, niri, …), or
+  run `wlr-peek doctor` to check your own compositor.
 - For the **GPU path** (default): a working EGL/GLES driver and `libgbm` (Mesa).
   Falls back to CPU shm automatically.
 - `wlr-chooser` also needs `xdg-desktop-portal-wlr` ≥ 0.8 (portal use);

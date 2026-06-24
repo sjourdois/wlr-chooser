@@ -1201,6 +1201,21 @@ pub fn activate_window(app_id: &str, title: &str, dup_index: usize) -> Result<()
     Ok(())
 }
 
+/// List the Wayland globals the current compositor advertises, as
+/// `(interface, version)`. Used by `wlr-peek doctor` to report which capture
+/// protocols (and therefore which features) are available.
+pub fn advertised_globals() -> Result<Vec<(String, u32)>> {
+    let conn = Connection::connect_to_env().context("Wayland connection")?;
+    let (globals, _queue) = registry_queue_init::<ActState>(&conn).context("registre Wayland")?;
+    let mut list = Vec::new();
+    globals.contents().with_list(|globals| {
+        for g in globals {
+            list.push((g.interface.clone(), g.version));
+        }
+    });
+    Ok(list)
+}
+
 impl Dispatch<WlRegistry, GlobalListContents> for ActState {
     fn event(
         _: &mut Self,
