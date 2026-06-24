@@ -80,6 +80,9 @@ pub struct Options {
     pub mode: Mode,
     /// DRM render node for the VAAPI backend (ignored otherwise).
     pub device: Option<PathBuf>,
+    /// Mux an AAC audio stream fed by [`VideoEncoder::push_audio`] (the PCM source is
+    /// the caller's concern — see [`crate::audio`]). Ignored for timelapse.
+    pub audio: bool,
 }
 
 impl Default for Options {
@@ -89,12 +92,18 @@ impl Default for Options {
             fps: 30,
             mode: Mode::Record,
             device: None,
+            audio: false,
         }
     }
 }
 
 /// Millisecond timebase used for real-time (VFR) recordings.
 const MS_TIMEBASE: ffmpeg::Rational = ffmpeg::Rational(1, 1000);
+/// Audio capture/encode format. Must match the PCM that [`crate::audio`] delivers.
+pub(crate) const AUDIO_RATE: u32 = 48_000;
+pub(crate) const AUDIO_CHANNELS: usize = 2;
+/// Target AAC bit rate.
+const AUDIO_BIT_RATE: usize = 160_000;
 
 /// The live pipeline, built on the first frame.
 struct Pipeline {
@@ -114,6 +123,21 @@ struct Pipeline {
     index: i64,
     /// VAAPI hardware context (device + frame pool), `None` for the CPU-fed backends.
     vaapi: Option<VaapiCtx>,
+    /// AAC audio stream, when recording with sound.
+    audio: Option<AudioPipe>,
+}
+
+/// The muxed AAC audio stream: an encoder, its output stream, and a running PTS in
+/// sample units (its timebase is `1/RATE`).
+struct AudioPipe {
+    encoder: ffmpeg::encoder::Audio,
+    stream_index: usize,
+    enc_time_base: ffmpeg::Rational,
+    ost_time_base: ffmpeg::Rational,
+    /// Samples per AAC frame (per channel), learned from the opened encoder.
+    frame_size: usize,
+    /// Next frame's PTS, in samples.
+    pts: i64,
 }
 
 /// A VAAPI hardware device and its surface pool, kept alive for the encoder's
@@ -197,6 +221,9 @@ pub struct VideoEncoder {
     path: PathBuf,
     opts: Options,
     pipeline: Option<Pipeline>,
+    /// Interleaved PCM awaiting encode (buffered until the pipeline exists, then drained
+    /// in whole AAC frames on every video tick).
+    audio_buf: Vec<f32>,
 }
 
 impl VideoEncoder {
@@ -208,6 +235,7 @@ impl VideoEncoder {
             path: path.into(),
             opts,
             pipeline: None,
+            audio_buf: Vec::new(),
         })
     }
 
@@ -232,6 +260,45 @@ fn resolve_backend(backend: Backend) -> Result<Backend> {
             b.codec_name()
         ),
     }
+}
+
+/// Add an AAC stream to `octx` and open its encoder (48 kHz stereo, planar float).
+fn build_audio_stream(
+    octx: &mut ffmpeg::format::context::Output,
+    global_header: bool,
+) -> Result<AudioPipe> {
+    let codec = ffmpeg::encoder::find(ffmpeg::codec::Id::AAC)
+        .ok_or_else(|| anyhow!("no AAC encoder in this FFmpeg build"))?;
+    let mut astream = octx.add_stream(codec).context("adding audio stream")?;
+    let stream_index = astream.index();
+
+    let mut aenc = ffmpeg::codec::context::Context::new_with_codec(codec)
+        .encoder()
+        .audio()?;
+    aenc.set_rate(AUDIO_RATE as i32);
+    aenc.set_channel_layout(ffmpeg::channel_layout::ChannelLayout::STEREO);
+    aenc.set_format(ffmpeg::format::Sample::F32(
+        ffmpeg::format::sample::Type::Planar,
+    ));
+    aenc.set_bit_rate(AUDIO_BIT_RATE);
+    let enc_time_base = ffmpeg::Rational(1, AUDIO_RATE as i32);
+    aenc.set_time_base(enc_time_base);
+    if global_header {
+        aenc.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+    }
+
+    let encoder = aenc.open_as(codec).context("opening the AAC encoder")?;
+    astream.set_parameters(&encoder);
+    let frame_size = (encoder.frame_size() as usize).max(1);
+
+    Ok(AudioPipe {
+        encoder,
+        stream_index,
+        enc_time_base,
+        ost_time_base: enc_time_base, // replaced once the header is written
+        frame_size,
+        pts: 0,
+    })
 }
 
 impl Pipeline {
@@ -298,9 +365,23 @@ impl Pipeline {
             .with_context(|| format!("opening encoder '{}'", backend.codec_name()))?;
         ost.set_parameters(&encoder);
 
+        // Optional AAC audio stream (real-time recordings only — a timelapse has no
+        // meaningful soundtrack). Added before the header is written.
+        let mut audio = if opts.audio && opts.mode == Mode::Record {
+            Some(build_audio_stream(&mut octx, global_header)?)
+        } else {
+            None
+        };
+
         octx.write_header().context("writing container header")?;
         // The muxer may rewrite the stream timebase; read it back for packet rescale.
         let ost_time_base = octx.stream(0).context("no output stream")?.time_base();
+        if let Some(ap) = audio.as_mut() {
+            ap.ost_time_base = octx
+                .stream(ap.stream_index)
+                .context("no audio stream")?
+                .time_base();
+        }
 
         let scaler = ffmpeg::software::scaling::Context::get(
             Pixel::RGBA,
@@ -325,6 +406,7 @@ impl Pipeline {
             last_pts: -1,
             index: 0,
             vaapi,
+            audio,
         })
     }
 
@@ -402,10 +484,72 @@ impl Pipeline {
         Ok(())
     }
 
-    /// Flush the encoder and finalise the container.
+    /// Consume whole AAC frames worth of interleaved PCM from `buf`, deinterleaving each
+    /// into a planar float frame, encoding and muxing it. Leaves the remainder in `buf`.
+    fn encode_audio(&mut self, buf: &mut Vec<f32>) -> Result<()> {
+        let frame_size = match &self.audio {
+            Some(a) => a.frame_size,
+            None => {
+                buf.clear();
+                return Ok(());
+            }
+        };
+        let need = frame_size * AUDIO_CHANNELS;
+        while buf.len() >= need {
+            let mut planes: Vec<Vec<f32>> = (0..AUDIO_CHANNELS)
+                .map(|_| Vec::with_capacity(frame_size))
+                .collect();
+            for fr in buf[..need].chunks_exact(AUDIO_CHANNELS) {
+                for (c, p) in planes.iter_mut().enumerate() {
+                    p.push(fr[c]);
+                }
+            }
+            buf.drain(..need);
+
+            let mut frame = ffmpeg::frame::Audio::new(
+                ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Planar),
+                frame_size,
+                ffmpeg::channel_layout::ChannelLayout::STEREO,
+            );
+            frame.set_rate(AUDIO_RATE);
+            for (c, p) in planes.iter().enumerate() {
+                frame.plane_mut::<f32>(c).copy_from_slice(p);
+            }
+
+            let ap = self.audio.as_mut().expect("audio present");
+            frame.set_pts(Some(ap.pts));
+            ap.pts += frame_size as i64;
+            ap.encoder
+                .send_frame(&frame)
+                .context("sending audio frame")?;
+
+            let mut packet = ffmpeg::Packet::empty();
+            while ap.encoder.receive_packet(&mut packet).is_ok() {
+                packet.set_stream(ap.stream_index);
+                packet.rescale_ts(ap.enc_time_base, ap.ost_time_base);
+                packet
+                    .write_interleaved(&mut self.octx)
+                    .context("writing audio packet")?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Flush both encoders and finalise the container.
     fn finish(mut self) -> Result<()> {
         self.encoder.send_eof().context("flushing encoder")?;
         self.drain()?;
+        if let Some(ap) = self.audio.as_mut() {
+            ap.encoder.send_eof().context("flushing audio encoder")?;
+            let mut packet = ffmpeg::Packet::empty();
+            while ap.encoder.receive_packet(&mut packet).is_ok() {
+                packet.set_stream(ap.stream_index);
+                packet.rescale_ts(ap.enc_time_base, ap.ost_time_base);
+                packet
+                    .write_interleaved(&mut self.octx)
+                    .context("writing final audio packet")?;
+            }
+        }
         self.octx
             .write_trailer()
             .context("writing container trailer")?;
@@ -435,15 +579,32 @@ impl FrameSink for VideoEncoder {
             )?);
         }
         let mode = self.opts.mode;
-        self.pipeline
-            .as_mut()
-            .expect("just initialised")
-            .encode(img, ts, mode)
+        let p = self.pipeline.as_mut().expect("just initialised");
+        p.encode(img, ts, mode)?;
+        p.encode_audio(&mut self.audio_buf)
+    }
+
+    /// Buffer interleaved PCM ([`AUDIO_CHANNELS`] per frame, [`AUDIO_RATE`] Hz); it is
+    /// muxed on the next [`FrameSink::push`]. A no-op unless `opts.audio` is set. Bounded
+    /// while the pipeline warms up (no video frame yet) so it can't grow without limit.
+    fn push_audio(&mut self, pcm: &[f32]) {
+        if !self.opts.audio {
+            return;
+        }
+        self.audio_buf.extend_from_slice(pcm);
+        let cap = AUDIO_RATE as usize * AUDIO_CHANNELS * 5;
+        if self.audio_buf.len() > cap {
+            let drop = self.audio_buf.len() - cap;
+            self.audio_buf.drain(..drop);
+        }
     }
 
     fn finish(&mut self) -> Result<()> {
         match self.pipeline.take() {
-            Some(p) => p.finish(),
+            Some(mut p) => {
+                p.encode_audio(&mut self.audio_buf)?; // flush whole buffered AAC frames
+                p.finish()
+            }
             None => Ok(()), // no frames captured: nothing to write
         }
     }
@@ -499,6 +660,7 @@ mod tests {
                 fps,
                 mode: Mode::Record,
                 device: Some("/dev/dri/renderD128".into()),
+                audio: false,
             },
         )
         .expect("create encoder");

@@ -65,6 +65,9 @@ pub mod mirror;
 #[cfg(feature = "video")]
 pub mod video;
 
+#[cfg(feature = "audio")]
+pub mod audio;
+
 #[cfg(feature = "toolkit")]
 pub mod icons;
 #[cfg(feature = "toolkit")]

@@ -401,32 +401,54 @@ mod record_impl {
         }
     }
 
-    /// Build the output sink from the file extension: `.gif`/`.webp` give animated images,
-    /// anything else an FFmpeg-muxed video. Returns the sink and a label for the log.
-    fn make_sink(args: &RecordArgs, mode: video::Mode) -> Result<(Box<dyn FrameSink>, String)> {
-        let ext = std::path::Path::new(&args.file)
+    /// True unless the output extension is an animated image (which carries no audio).
+    fn is_video_ext(file: &str) -> bool {
+        let ext = std::path::Path::new(file)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        !matches!(ext.as_str(), "gif" | "webp")
+    }
+
+    /// Build the output sink from the file extension: `.gif`/`.webp` give animated images,
+    /// anything else an FFmpeg-muxed video (with an AAC stream when `audio`). Returns the
+    /// sink and a label for the log.
+    fn make_sink(
+        args: &RecordArgs,
+        mode: video::Mode,
+        audio: bool,
+    ) -> Result<(Box<dyn FrameSink>, String)> {
         let fps = args.fps.max(1);
-        match ext.as_str() {
-            "gif" => Ok((Box::new(GifSink::new(&args.file, fps)?), "GIF".into())),
-            "webp" => Ok((Box::new(WebpSink::new(&args.file, fps)), "WebP".into())),
-            _ => {
-                let enc = VideoEncoder::new(
-                    &args.file,
-                    video::Options {
-                        backend: args.encoder.into(),
-                        fps,
-                        mode,
-                        device: Some(args.device.clone().into()),
-                    },
-                )?;
-                let label = format!("{:?}", enc.resolved_backend()?);
-                Ok((Box::new(enc), label))
-            }
+        if !is_video_ext(&args.file) {
+            let ext = std::path::Path::new(&args.file)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            return match ext.as_str() {
+                "gif" => Ok((Box::new(GifSink::new(&args.file, fps)?), "GIF".into())),
+                _ => Ok((Box::new(WebpSink::new(&args.file, fps)), "WebP".into())),
+            };
         }
+        let enc = VideoEncoder::new(
+            &args.file,
+            video::Options {
+                backend: args.encoder.into(),
+                fps,
+                mode,
+                device: Some(args.device.clone().into()),
+                audio,
+            },
+        )?;
+        let label = format!("{:?}", enc.resolved_backend()?);
+        Ok((Box::new(enc), label))
+    }
+
+    /// Whether audio recording is wanted: not `--no-audio`, and a video (not image) file.
+    #[cfg(feature = "audio")]
+    fn audio_wanted(args: &RecordArgs) -> bool {
+        !args.no_audio && is_video_ext(&args.file)
     }
 
     #[derive(Args)]
@@ -469,6 +491,15 @@ mod record_impl {
         /// Stop automatically after this many seconds (otherwise: Ctrl-C).
         #[arg(short = 'd', long, value_name = "SECS")]
         duration: Option<f64>,
+        /// Don't record audio (it is on by default for a video file).
+        #[cfg(feature = "audio")]
+        #[arg(long)]
+        no_audio: bool,
+        /// Capture this PipeWire audio node instead of the default sink monitor (system
+        /// audio) — e.g. a microphone source.
+        #[cfg(feature = "audio")]
+        #[arg(long, value_name = "NODE")]
+        audio_source: Option<String>,
         /// Destination file; the format is inferred from its extension. `.mp4`/`.mkv`
         /// (H.264 video) or animated `.gif`/`.webp` (downscaled; best for a region).
         #[arg(value_name = "FILE")]
@@ -637,11 +668,32 @@ mod record_impl {
         };
         let interval = args.timelapse.as_deref().map(parse_interval).transpose()?;
 
-        let (mut sink, fmt) = make_sink(&args, mode)?;
+        // Start audio capture first, so the muxer only adds an AAC stream if sound is
+        // actually flowing (a failed capture falls back to a silent video, not a broken
+        // empty stream). Only for video output (animated images carry no audio).
+        #[cfg(feature = "audio")]
+        let audio = if audio_wanted(&args) {
+            match wlr_capture::audio::AudioCapture::start(args.audio_source.clone()) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    eprintln!("wlr-shot: recording without audio ({e})");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(feature = "audio")]
+        let have_audio = audio.is_some();
+        #[cfg(not(feature = "audio"))]
+        let have_audio = false;
+
+        let (mut sink, fmt) = make_sink(&args, mode, have_audio)?;
         eprintln!(
-            "wlr-shot: recording {} to {} ({fmt}). Press Ctrl-C to stop.",
+            "wlr-shot: recording {} to {} ({fmt}{}). Press Ctrl-C to stop.",
             target.label(),
             args.file,
+            if have_audio { " + audio" } else { "" },
         );
 
         // Ctrl-C flips the stop flag so we finalise the file cleanly.
@@ -711,6 +763,15 @@ mod record_impl {
                 }
             }
 
+            // Drain captured audio into the encoder (muxed on the next video push).
+            #[cfg(feature = "audio")]
+            if let Some(cap) = &audio {
+                let pcm = cap.drain();
+                if !pcm.is_empty() {
+                    sink.push_audio(&pcm);
+                }
+            }
+
             // Emit the latest frame at every elapsed tick (repeating it when the
             // source is static, so the output keeps a steady frame rate).
             if let (Some(img), Some(mut nt)) = (last_img.as_ref(), next_tick) {
@@ -731,6 +792,17 @@ mod record_impl {
                 last_log = Instant::now();
             }
         }
+
+        // One last audio push (and stop capture) so the tail isn't dropped, then finalise.
+        #[cfg(feature = "audio")]
+        if let Some(cap) = &audio {
+            let pcm = cap.drain();
+            if !pcm.is_empty() {
+                sink.push_audio(&pcm);
+            }
+        }
+        #[cfg(feature = "audio")]
+        drop(audio);
 
         sink.finish().context("finalising the output file")?;
         drop(sink); // flush GIF/WebP trailers held until the encoder is dropped

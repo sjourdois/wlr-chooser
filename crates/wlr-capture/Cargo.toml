@@ -38,6 +38,9 @@ serde_json = { workspace = true, optional = true }
 smithay-client-toolkit = { workspace = true, optional = true }
 # Native FFmpeg bindings for video encoding (the `video` feature).
 ffmpeg-next = { workspace = true, optional = true }
+# Native PipeWire bindings for audio capture (the `audio` feature). `v0_3_44` exposes
+# TARGET_OBJECT (for `--audio <node>`); libpipewire 1.x supports it.
+pipewire = { version = "0.8", optional = true, features = ["v0_3_44"] }
 
 # --- Toolkit (the `toolkit` feature): egui/EGL overlay rendering + theme/i18n/icons.
 egui = { workspace = true, optional = true }
@@ -78,6 +81,10 @@ mirror = ["toolkit", "dep:smithay-client-toolkit"]
 # stream to a file via FFmpeg (NVENC / VAAPI / libx264). Headless — no toolkit. Pulls
 # `ffmpeg-next`, which links the system libav* libraries (needs the `-dev` packages).
 video = ["dep:ffmpeg-next"]
+# Audio capture for recording (`audio`): a native PipeWire source feeding an AAC stream
+# muxed alongside the video. Pulls `pipewire` (links libpipewire-0.3; needs libclang to
+# build). Builds on `video` (the FFmpeg muxer/encoder).
+audio = ["video", "dep:pipewire"]
 # Localisation via Fluent (`i18n`). On by default. Without it, `tr!` returns the
 # English text generated from the `en` catalog at build time and the whole Fluent
 # stack (i18n-embed, rust-embed, unic-langid) is dropped — so a minimal/headless

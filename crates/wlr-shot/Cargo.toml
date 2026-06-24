@@ -17,7 +17,7 @@ name = "wlr-shot"
 path = "src/main.rs"
 
 [features]
-default = ["i18n", "video"]
+default = ["i18n", "video", "audio"]
 # Localised UI (the overlay hint) via Fluent. On by default; `--no-default-features`
 # builds English-only with no Fluent dependency.
 i18n = ["wlr-capture/i18n"]
@@ -30,6 +30,9 @@ gpu = ["wlr-capture/gpu"]
 # (`--no-default-features --features i18n`) for a screenshots-only build with no
 # FFmpeg/libav* build dependency.
 video = ["wlr-capture/video", "dep:ctrlc", "dep:webp"]
+# Sound for `record`: a native PipeWire capture muxed as AAC alongside the video. On by
+# default; `--features video` without it builds video-only (no libpipewire dependency).
+audio = ["video", "wlr-capture/audio"]
 
 [dependencies]
 # Screenshots only need CPU pixels, so we build the engine without the GPU path

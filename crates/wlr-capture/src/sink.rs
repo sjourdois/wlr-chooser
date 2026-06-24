@@ -19,6 +19,11 @@ pub trait FrameSink {
     /// Consume one CPU-pixel frame.
     fn push(&mut self, img: &CapturedImage, ts: Duration) -> Result<()>;
 
+    /// Feed interleaved PCM for an optional audio track. The default ignores it (sinks
+    /// without sound — GIF/WebP — and silent recordings); the video encoder buffers it
+    /// and muxes it on the next [`FrameSink::push`].
+    fn push_audio(&mut self, _pcm: &[f32]) {}
+
     /// Consume one GPU dma-buf frame. The default reads it back to CPU pixels via
     /// `rb` and forwards to [`FrameSink::push`]; override to consume it on the GPU.
     fn push_dmabuf(
