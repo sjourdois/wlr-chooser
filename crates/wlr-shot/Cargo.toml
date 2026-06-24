@@ -33,6 +33,9 @@ video = ["wlr-capture/video", "dep:ctrlc", "dep:webp"]
 # Sound for `record`: a native PipeWire capture muxed as AAC alongside the video. On by
 # default; `--features video` without it builds video-only (no libpipewire dependency).
 audio = ["video", "wlr-capture/audio"]
+# Pulse/ALSA capture fallback (off by default; PipeWire is universal). Enable for a
+# PipeWire-less host: `--features audio-fallback`.
+audio-fallback = ["audio", "wlr-capture/audio-fallback"]
 
 [dependencies]
 # Screenshots only need CPU pixels, so we build the engine without the GPU path

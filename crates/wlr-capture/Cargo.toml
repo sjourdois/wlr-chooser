@@ -85,6 +85,10 @@ video = ["dep:ffmpeg-next"]
 # muxed alongside the video. Pulls `pipewire` (links libpipewire-0.3; needs libclang to
 # build). Builds on `video` (the FFmpeg muxer/encoder).
 audio = ["video", "dep:pipewire"]
+# Pulse/ALSA fallback for `audio` capture, via FFmpeg's libavdevice (no extra system
+# dep — libavdevice ships with FFmpeg). Off by default: PipeWire is universal today, so
+# this is only for the rare PipeWire-less host. Tried after the native PipeWire path.
+audio-fallback = ["audio", "ffmpeg-next/device"]
 # Localisation via Fluent (`i18n`). On by default. Without it, `tr!` returns the
 # English text generated from the `en` catalog at build time and the whole Fluent
 # stack (i18n-embed, rust-embed, unic-langid) is dropped — so a minimal/headless

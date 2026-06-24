@@ -92,6 +92,8 @@ wlr-shot record -o DP-4 --no-audio clip.mp4     # video only (audio is on by def
   as an AAC track by default, via **native PipeWire**. `--no-audio` records silently;
   `--audio-source NODE` captures a specific node instead (e.g. a microphone). Needs the
   `audio` build feature (on by default; links libpipewire). GIF/WebP carry no audio.
+  For a PipeWire-less host, build with `--features audio-fallback` to add a **Pulse/ALSA**
+  path (via FFmpeg's libavdevice, no extra system dep), tried after PipeWire.
 
 Recording needs the `video` build feature (on by default), which links the system
 FFmpeg libraries. A screenshots-only build drops it: `cargo build -p wlr-shot

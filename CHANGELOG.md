@@ -9,11 +9,13 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - **`wlr-shot record` audio**: a video recording now captures **system audio** (the
-  default sink's monitor) as an AAC track by default, via **native PipeWire** (the
-  capture is decoupled from the FFmpeg muxer, so a Pulse/ALSA fallback can slot in
-  later). `--no-audio` records silently; `--audio-source NODE` picks a specific node
-  (e.g. a microphone). Needs the new `audio` build feature (on by default; links
-  libpipewire). GIF/WebP carry no audio.
+  default sink's monitor) as an AAC track by default, via **native PipeWire**. Capture
+  is decoupled from the FFmpeg muxer, so an optional **Pulse/ALSA fallback** (the
+  `audio-fallback` feature, off by default — PipeWire is universal — via FFmpeg's
+  libavdevice, no extra system dep) slots in after it for PipeWire-less hosts.
+  `--no-audio` records silently; `--audio-source NODE` picks a specific node (e.g. a
+  microphone). Needs the new `audio` build feature (on by default; links libpipewire).
+  GIF/WebP carry no audio.
 - **`wlr-shot record` animated GIF/WebP**: pick the format by extension — `out.gif` or
   `out.webp` produce an animated image instead of H.264. Frames are downscaled (GIF to
   800 px, WebP to 1280 px on the long side) since per-frame GIF quantization on a full
