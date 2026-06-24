@@ -1,12 +1,51 @@
-# Український переклад (рядки інтерфейсу) wlr-chooser.
+# Український переклад (рядки інтерфейсу) wlr-utils.
 tab-all = Усі
 tab-windows = Вікна
 tab-outputs = Екрани
-
 filter-hint = Фільтр…
 screen-label = Екран { $name }
 loading = …
 show-system = Системні вікна
-
 error = wlr-chooser: { $error }
 pip-gone = Вихідне вікно закрито
+overlay-region-hint = Перетягніть для вибору · Esc — скасувати
+overlay-pick-hint = Клацніть, щоб вибрати · Esc — скасувати
+overlay-magnify-hint = Прокрутка — масштаб · Esc — вийти
+draw-hint = Малювання · h — довідка · Esc — вийти
+draw-passthrough-hint = Наскрізні кліки — Caps Lock, щоб знову малювати
+draw-text-hint = Введіть текст · Enter — розмістити · Esc — скасувати
+draw-spotlight-hint = Підсвітка · перетягніть фігуру або рухайте курсор · колесо/i k розмір · нахил/j l затемнення · відпустіть Shift, щоб завершити
+draw-tool-pen = Перо
+draw-tool-rect = Прямокутник
+draw-tool-mask = Маска (залита область)
+draw-tool-arrow = Стрілка
+draw-tool-text = Текст
+draw-tool-eraser = Гумка
+draw-palette-title = Колір
+draw-help-title = wlr-draw — клавіші
+draw-help-tools = інструменти (перо, лінія, прямокутник, еліпс, стрілка, текст, гумка)
+draw-help-color = палітра кольорів
+draw-help-undo = скасувати / повторити
+draw-help-width = товщина лінії
+draw-help-clear = очистити все
+draw-help-visibility = сховати / показати
+draw-help-help = ця довідка
+draw-help-leave = вийти з режиму малювання
+draw-help-constrain = утримуйте: обмеження (коло / квадрат / вісь)
+draw-help-spotlight = утримуйте: підсвітка (затемнення навколо фігури / курсора)
+draw-help-spotlight-tune = підсвітка: колесо/i,k розмір · нахил/j,l затемнення
+draw-help-passthrough = Caps Lock: наскрізні кліки до програм
+draw-help-draw = ліве перетягування: малювати
+draw-help-snap = перо, утримуйте нерухомо: прив'язка до рівної фігури
+draw-help-text = текст: клацніть, введіть, Enter
+tray-status-drawing = Малювання
+tray-status-idle = Очікування (наскрізні кліки)
+tray-toggle = Перемкнути режим малювання
+tray-clear = Очистити
+tray-undo = Скасувати
+tray-shortcuts = Гарячі клавіші
+tray-quit = Вийти
+draw-help-move = стрілки: перемістити виділення · Ctrl: більший крок
+draw-tool-move = Перемістити
+draw-help-freeze = Пробіл: заморозити екран для анотацій
+draw-help-rightmove = перетягування ПКМ: перемістити елемент
