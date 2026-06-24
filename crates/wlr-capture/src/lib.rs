@@ -37,6 +37,11 @@
 //! and reuse this engine for the heavy lifting; a future headless recorder can use
 //! the capture engine + readback without pulling in the toolkit.
 
+// Re-exported so consumers can own a single `Connection` and pass it to several
+// overlays in one process (e.g. the region selector then a live mirror), sharing one
+// `EGLDisplay` instead of opening a second one. See `overlay::select_region_on`.
+pub use wayland_client::Connection;
+
 pub mod clipboard;
 pub mod diff;
 pub mod gl;

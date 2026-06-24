@@ -30,6 +30,9 @@ enum Cmd {
     Loupe,
     /// Mirror a window live in a floating, always-on-top window (picture-in-picture).
     Mirror(MirrorArgs),
+    /// Select a region (or point) with the mouse and print its geometry — a native
+    /// slurp replacement (`X,Y WxH`). Exit 1 if cancelled.
+    Region(RegionArgs),
     /// Recognise text in a screen region (OCR, via Tesseract).
     #[cfg(feature = "ocr")]
     Ocr(OcrArgs),
@@ -83,6 +86,7 @@ fn main() {
         Cmd::Color(args) => color(args),
         Cmd::Loupe => loupe(),
         Cmd::Mirror(args) => mirror(args),
+        Cmd::Region(args) => region(args),
         #[cfg(feature = "ocr")]
         Cmd::Ocr(args) => ocr(args),
         #[cfg(feature = "watch")]
@@ -132,27 +136,121 @@ fn loupe() -> Result<()> {
 }
 
 #[derive(Args)]
+struct RegionArgs {
+    /// Pick a single point instead of a region (prints `X,Y`).
+    #[arg(short = 'p', long)]
+    point: bool,
+    /// Output format with `%x`/`%y`/`%w`/`%h` placeholders (`%w`/`%h` are 0 for a
+    /// point). Default: `%x,%y %wx%h` for a region, `%x,%y` for a point.
+    #[arg(short = 'f', long, value_name = "FMT")]
+    format: Option<String>,
+}
+
+/// Select a region (or a point) with the mouse on a frozen screen and print its
+/// geometry — a native slurp replacement. Exits 1 if cancelled (Esc). Reuses the same
+/// frozen overlay as `wlr-shot -s` and the colour picker.
+fn region(args: RegionArgs) -> Result<()> {
+    let mut client = wl::Client::connect().context("Wayland connection")?;
+    client.refresh().ok();
+    let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
+    if args.point {
+        let (x, y) = match overlay::pick_point(&caps)? {
+            Some(p) => p,
+            None => std::process::exit(1),
+        };
+        let fmt = args.format.as_deref().unwrap_or("%x,%y");
+        println!("{}", fill_geometry(fmt, x, y, 0, 0));
+    } else {
+        let r = match overlay::select_region(&caps)? {
+            Some(r) => r,
+            None => std::process::exit(1),
+        };
+        let fmt = args.format.as_deref().unwrap_or("%x,%y %wx%h");
+        println!("{}", fill_geometry(fmt, r.x, r.y, r.w as i32, r.h as i32));
+    }
+    Ok(())
+}
+
+/// Substitute `%x`/`%y`/`%w`/`%h` in a slurp-style format string.
+fn fill_geometry(fmt: &str, x: i32, y: i32, w: i32, h: i32) -> String {
+    fmt.replace("%x", &x.to_string())
+        .replace("%y", &y.to_string())
+        .replace("%w", &w.to_string())
+        .replace("%h", &h.to_string())
+}
+
+#[derive(Args)]
 struct MirrorArgs {
     /// The `ext-foreign-toplevel` identifier of the window to mirror (as printed by
-    /// `wlr-chooser`). With no ID and no `-g`, the chooser is launched to pick one.
+    /// `wlr-chooser`). With no source flag, the chooser is launched to pick one.
     #[arg(group = "source")]
     id: Option<String>,
-    /// Mirror (and magnify) this logical region instead of a window, `"X,Y WxH"`
-    /// (the format slurp prints) — a live, always-on-top loupe of a fixed area.
+    /// Select a region with the mouse, then mirror it (a frozen-screen drag, like
+    /// `wlr-shot -s`) — no need for slurp.
+    #[arg(short = 's', long, group = "source")]
+    select: bool,
+    /// Mirror (and magnify) this logical region, `"X,Y WxH"` (the format slurp prints).
     #[arg(short = 'g', long, value_name = "GEOM", group = "source")]
     geometry: Option<String>,
-    /// With `-g`: magnification factor (window starts at region × zoom).
-    #[arg(long, default_value_t = 2.0, requires = "geometry")]
+    /// Mirror this whole named output / screen (e.g. `DP-4`).
+    #[arg(short = 'o', long, value_name = "NAME", group = "source")]
+    output: Option<String>,
+    /// Pick a window to mirror via the chooser (same as no source flag).
+    #[arg(short = 'w', long = "pick-window", group = "source")]
+    pick_window: bool,
+    /// Mirror the active (focused) window's area — needs compositor focus info.
+    #[cfg(any(feature = "ocr", feature = "watch"))]
+    #[arg(short = 'a', long, group = "source")]
+    active_window: bool,
+    /// Mirror the focused output — needs compositor focus info.
+    #[cfg(any(feature = "ocr", feature = "watch"))]
+    #[arg(long, group = "source")]
+    current_output: bool,
+    /// Magnification factor for region/output sources (window starts at region × zoom).
+    #[arg(long, default_value_t = 2.0)]
     zoom: f32,
+    /// For a region (`-s`/`-g`): whether the loupe follows the **output** (shows
+    /// whatever workspace is on it) or the **window** under the region (captures that
+    /// toplevel, so it follows the window across moves/workspaces). `window` needs
+    /// compositor focus info.
+    #[arg(long, value_enum, default_value_t = Follow::Output)]
+    follow: Follow,
+}
+
+#[derive(Clone, Copy, PartialEq, ValueEnum)]
+enum Follow {
+    /// Capture the output; the loupe shows the visible workspace.
+    Output,
+    /// Capture the window under the region; the loupe follows that window.
+    Window,
 }
 
 /// Mirror a window (or, with `-g`, a region) live in a floating, always-on-top
 /// window. One mirror per window (an advisory lock makes a second launch for the
 /// same window a no-op).
 fn mirror(args: MirrorArgs) -> Result<()> {
-    if let Some(geo) = args.geometry {
-        return mirror_region(&geo, args.zoom);
+    // Interactive region select runs its own EGL overlay, then the mirror opens another.
+    // EGL caches its display by the `wl_display` pointer, so a *second* connection there
+    // can alias the selector's freed one (`eglCreateWindowSurface: BadAlloc`). We share
+    // one connection (one `EGLDisplay`) between the two — like the per-output overlay
+    // surfaces already do.
+    if args.select {
+        let conn = wlr_capture::Connection::connect_to_env().context("Wayland connection")?;
+        let mut client = wl::Client::connect().context("Wayland connection")?;
+        client.refresh().ok();
+        let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
+        let region = match overlay::select_region_on(&conn, &caps)? {
+            Some(r) => r,
+            None => std::process::exit(1), // cancelled
+        };
+        let (source, config) = build_source(&client, region, args.zoom, args.follow)?;
+        return wlr_capture::mirror::run_on(&conn, source, config);
     }
+    // Other region / output sources → a live region magnifier (single EGL context).
+    if let Some(region) = resolve_mirror_region(&args)? {
+        return mirror_region(region, args.zoom, args.follow);
+    }
+    // Otherwise a window: an explicit id, else the chooser (incl. `-w`).
     let id = match args.id {
         Some(id) => id,
         None => match pick_via_chooser() {
@@ -176,18 +274,147 @@ fn mirror(args: MirrorArgs) -> Result<()> {
     )
 }
 
+/// Resolve a non-interactive region/output mirror source to a [`Region`] in global
+/// logical coordinates, or `None` for a window source (handled by the caller). The
+/// interactive `-s` select is handled in [`mirror`] (it shares one connection with the
+/// mirror, so it isn't here).
+fn resolve_mirror_region(args: &MirrorArgs) -> Result<Option<Region>> {
+    if let Some(geo) = &args.geometry {
+        return Ok(Some(capture::parse_geometry(geo)?));
+    }
+    if let Some(name) = &args.output {
+        return Ok(Some(output_rect(name)?));
+    }
+    #[cfg(any(feature = "ocr", feature = "watch"))]
+    {
+        if args.active_window {
+            return Ok(Some(active_window_rect()?));
+        }
+        if args.current_output {
+            return Ok(Some(output_rect(&focused_output()?)?));
+        }
+    }
+    Ok(None)
+}
+
+/// The logical rectangle of the named output, as a [`Region`].
+fn output_rect(name: &str) -> Result<Region> {
+    let mut client = wl::Client::connect().context("Wayland connection")?;
+    client.refresh().ok();
+    client
+        .outputs()
+        .iter()
+        .find(|o| o.name == name)
+        .map(|o| o.logical_rect())
+        .with_context(|| format!("no output named `{name}`"))
+}
+
 /// Mirror a fixed logical region live, magnified by `zoom`. Resolves the output the
 /// region's top-left corner sits on (mono-output for now), clips the region to it,
 /// and streams that output, showing only the region's sub-rectangle.
-fn mirror_region(geo: &str, zoom: f32) -> Result<()> {
-    let region = capture::parse_geometry(geo)?;
+fn mirror_region(region: Region, zoom: f32, follow: Follow) -> Result<()> {
+    let mut client = wl::Client::connect().context("Wayland connection")?;
+    client.refresh().ok();
+    let (source, config) = build_source(&client, region, zoom, follow)?;
+    wlr_capture::mirror::run(source, config)
+}
+
+/// Build the mirror source for a region: follow the **window** under it when asked (and
+/// one is found there), else follow the **output** (the default). Falls back to output
+/// with a notice if no window is under the region.
+fn build_source(
+    client: &wl::Client,
+    region: Region,
+    zoom: f32,
+    follow: Follow,
+) -> Result<(wlr_capture::mirror::Source, wlr_capture::mirror::Config)> {
+    if follow == Follow::Window {
+        #[cfg(any(feature = "ocr", feature = "watch"))]
+        {
+            if let Some(sc) = region_window_source(client, region, zoom)? {
+                return Ok(sc);
+            }
+            eprintln!("wlr-peek: no window under the region — mirroring the output instead");
+        }
+        #[cfg(not(any(feature = "ocr", feature = "watch")))]
+        anyhow::bail!("--follow window needs focus support (built without ocr/watch)");
+    }
+    region_source(client, region, zoom)
+}
+
+/// Resolve a region to a window-following mirror source: find the window under the
+/// region's centre (compositor IPC), match it to a foreign-toplevel handle, and crop to
+/// the region's sub-rectangle within the window's content. `None` if there's no window
+/// there, or no matching toplevel handle (the caller falls back to output mode).
+#[cfg(any(feature = "ocr", feature = "watch"))]
+fn region_window_source(
+    client: &wl::Client,
+    region: Region,
+    zoom: f32,
+) -> Result<Option<(wlr_capture::mirror::Source, wlr_capture::mirror::Config)>> {
+    let (cx, cy) = (
+        region.x + region.w as i32 / 2,
+        region.y + region.h as i32 / 2,
+    );
+    let Some(backend) = wlr_capture::focus::detect() else {
+        return Ok(None);
+    };
+    let Some(win) = backend.window_at(cx, cy) else {
+        return Ok(None);
+    };
+    // Match the compositor's window (app_id + title) to a foreign-toplevel handle.
+    let Some(tl) = client
+        .toplevels()
+        .iter()
+        .find(|t| t.app_id == win.app_id && t.title == win.title)
+    else {
+        return Ok(None);
+    };
+
+    // The region as a normalized sub-rectangle of the window's content.
+    let wr = win.rect;
+    let nx = |v: i32| ((v - wr.x) as f32 / wr.w.max(1) as f32).clamp(0.0, 1.0);
+    let ny = |v: i32| ((v - wr.y) as f32 / wr.h.max(1) as f32).clamp(0.0, 1.0);
+    let crop = [
+        nx(region.x),
+        ny(region.y),
+        nx(region.x + region.w as i32),
+        ny(region.y + region.h as i32),
+    ];
+
+    let label = if win.title.is_empty() {
+        win.app_id.clone()
+    } else {
+        win.title.clone()
+    };
+    Ok(Some((
+        wlr_capture::mirror::Source::ToplevelRegion {
+            id: tl.identifier.clone(),
+            crop,
+            region_w: region.w,
+            region_h: region.h,
+            zoom,
+        },
+        wlr_capture::mirror::Config {
+            app_id: "wlr-peek-mirror".to_string(),
+            label,
+            icon: None,
+            relaunch: vec![],
+        },
+    )))
+}
+
+/// Resolve a logical region to a mirror [`Source::Region`](wlr_capture::mirror::Source)
+/// (+ window config): the output the region's top-left corner sits on (mono-output for
+/// now), clipped to it, with the region as a normalized sub-rectangle of that output.
+fn region_source(
+    client: &wl::Client,
+    region: Region,
+    zoom: f32,
+) -> Result<(wlr_capture::mirror::Source, wlr_capture::mirror::Config)> {
     if region.is_empty() {
         anyhow::bail!("empty region");
     }
-    let mut client = wl::Client::connect().context("Wayland connection")?;
-    client.refresh().ok();
-
-    // The output under the region's top-left corner; clip the region to it.
     let corner = Region {
         x: region.x,
         y: region.y,
@@ -213,7 +440,7 @@ fn mirror_region(geo: &str, zoom: f32) -> Result<()> {
         (region.y + region.h as i32 - lr.y) as f32 / lr.h.max(1) as f32,
     ];
 
-    wlr_capture::mirror::run(
+    Ok((
         wlr_capture::mirror::Source::Region {
             output: output.name.clone(),
             crop,
@@ -227,7 +454,7 @@ fn mirror_region(geo: &str, zoom: f32) -> Result<()> {
             icon: None,
             relaunch: vec![], // no re-pick in region mode
         },
-    )
+    ))
 }
 
 /// Launch `wlr-chooser --windows` to pick a window; parse its `Window: <id>` stdout

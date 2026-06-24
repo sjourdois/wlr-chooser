@@ -520,7 +520,17 @@ impl State {
 /// Drag a rectangle on a frozen overlay spanning every captured output; returns the
 /// chosen region (global logical coordinates) or `None` if cancelled (`Esc`).
 pub fn select_region(captures: &[OutputCapture]) -> Result<Option<Region>> {
-    Ok(run(captures, Mode::Region)?.map(|o| match o {
+    let conn = Connection::connect_to_env()?;
+    select_region_on(&conn, captures)
+}
+
+/// [`select_region`] on a caller-provided connection. Use this to chain a second
+/// GPU/EGL overlay (e.g. a live mirror) in the *same* process: EGL caches its display
+/// by the `wl_display` pointer, so a second connection there can alias a freed one and
+/// fail (`eglCreateWindowSurface: BadAlloc`). Sharing one connection (one `EGLDisplay`)
+/// avoids it — the same way the per-output surfaces already share one here.
+pub fn select_region_on(conn: &Connection, captures: &[OutputCapture]) -> Result<Option<Region>> {
+    Ok(run(conn, captures, Mode::Region)?.map(|o| match o {
         Outcome::Region(r) => r,
         Outcome::Point { .. } => unreachable!("region mode yields a region"),
     }))
@@ -529,7 +539,8 @@ pub fn select_region(captures: &[OutputCapture]) -> Result<Option<Region>> {
 /// Pick a single pixel on a frozen overlay (with a magnifying loupe); returns its
 /// position in global logical coordinates, or `None` if cancelled (`Esc`).
 pub fn pick_point(captures: &[OutputCapture]) -> Result<Option<(i32, i32)>> {
-    Ok(run(captures, Mode::Point)?.map(|o| match o {
+    let conn = Connection::connect_to_env()?;
+    Ok(run(&conn, captures, Mode::Point)?.map(|o| match o {
         Outcome::Point { x, y } => (x, y),
         Outcome::Region(_) => unreachable!("point mode yields a point"),
     }))
@@ -540,15 +551,15 @@ pub fn pick_point(captures: &[OutputCapture]) -> Result<Option<(i32, i32)>> {
 /// quits. Not live (the screen is frozen on entry) — a fullscreen live magnifier
 /// would capture its own output.
 pub fn magnify(captures: &[OutputCapture]) -> Result<()> {
-    run(captures, Mode::Magnify)?;
+    let conn = Connection::connect_to_env()?;
+    run(&conn, captures, Mode::Magnify)?;
     Ok(())
 }
 
-/// Run the frozen overlay over `captures` in the given [`Mode`]; returns the user's
-/// choice or `None` if cancelled.
-fn run(captures: &[OutputCapture], mode: Mode) -> Result<Option<Outcome>> {
-    let conn = Connection::connect_to_env()?;
-    let (globals, mut queue) = registry_queue_init(&conn)?;
+/// Run the frozen overlay over `captures` in the given [`Mode`] on `conn`; returns the
+/// user's choice or `None` if cancelled.
+fn run(conn: &Connection, captures: &[OutputCapture], mode: Mode) -> Result<Option<Outcome>> {
+    let (globals, mut queue) = registry_queue_init(conn)?;
     let qh = queue.handle();
 
     let compositor =
@@ -630,7 +641,7 @@ fn run(captures: &[OutputCapture], mode: Mode) -> Result<Option<Outcome>> {
         queue.blocking_dispatch(&mut state)?;
         if state.dirty {
             state.dirty = false;
-            state.redraw_all(&conn);
+            state.redraw_all(conn);
         }
     }
 

@@ -8,12 +8,25 @@
 
 use crate::wl::Region;
 
+/// A window's identity + content geometry, for binding a region mirror to the window
+/// under it (`app_id` + `title` match a `wl::Toplevel`; `rect` is its content area).
+pub struct WindowRef {
+    pub app_id: String,
+    pub title: String,
+    pub rect: Region,
+}
+
 /// A compositor-specific source of focus information.
 pub trait FocusBackend {
     /// Name of the focused output, if any.
     fn focused_output(&self) -> Option<String>;
     /// Logical rectangle of the active (focused) window, if any.
     fn active_window_rect(&self) -> Option<Region>;
+    /// The window under the given global logical point, if any. Used to make a region
+    /// mirror follow the window beneath it. Default `None` (only Sway implements it).
+    fn window_at(&self, _x: i32, _y: i32) -> Option<WindowRef> {
+        None
+    }
     /// Human-readable backend name, for error messages.
     fn name(&self) -> &'static str;
 }
@@ -78,6 +91,75 @@ impl FocusBackend for Sway {
         }
         rect_of(node)
     }
+
+    fn window_at(&self, x: i32, y: i32) -> Option<WindowRef> {
+        sway_window_at(&Self::query("get_tree")?, x, y)
+    }
+}
+
+/// Whether a sway node is a window (vs a container/workspace/output).
+fn sway_is_window(node: &serde_json::Value) -> bool {
+    node.get("app_id").is_some_and(|a| !a.is_null()) || node.get("window_properties").is_some()
+}
+
+/// A node's content rectangle in global logical coordinates: its `rect` shifted by the
+/// `window_rect` (content offset within the node), so the crop lines up with what the
+/// foreign-toplevel capture actually contains (no server-side borders).
+fn sway_content_rect(node: &serde_json::Value) -> Option<Region> {
+    let rect = rect_of(node)?;
+    if let Some(wr) = node.get("window_rect") {
+        if let (Some(w), Some(h)) = (wr["width"].as_u64(), wr["height"].as_u64()) {
+            if w > 0 && h > 0 {
+                return Some(Region {
+                    x: rect.x + wr["x"].as_i64().unwrap_or(0) as i32,
+                    y: rect.y + wr["y"].as_i64().unwrap_or(0) as i32,
+                    w: w as u32,
+                    h: h as u32,
+                });
+            }
+        }
+    }
+    Some(rect)
+}
+
+/// The deepest window node whose `rect` contains the global logical point `(x, y)`.
+fn sway_window_at(node: &serde_json::Value, x: i32, y: i32) -> Option<WindowRef> {
+    // Skip anything not actually on screen — sway keeps the geometry of windows on
+    // hidden workspaces (and tabbed/stacked-behind windows) in the tree, so without
+    // this we'd match a window the point only "contains" on a workspace you can't see.
+    if node.get("visible").and_then(|v| v.as_bool()) == Some(false) {
+        return None;
+    }
+    // Descend into children first so the innermost (leaf) window wins.
+    for key in ["floating_nodes", "nodes"] {
+        if let Some(children) = node.get(key).and_then(|c| c.as_array()) {
+            for child in children {
+                if rect_of(child).is_some_and(|r| contains(&r, x, y)) {
+                    if let Some(found) = sway_window_at(child, x, y) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+    }
+    if sway_is_window(node) && rect_of(node).is_some_and(|r| contains(&r, x, y)) {
+        let app_id = node["app_id"]
+            .as_str()
+            .or_else(|| node["window_properties"]["class"].as_str())
+            .unwrap_or_default()
+            .to_string();
+        return Some(WindowRef {
+            app_id,
+            title: node["name"].as_str().unwrap_or_default().to_string(),
+            rect: sway_content_rect(node)?,
+        });
+    }
+    None
+}
+
+/// Whether `(x, y)` falls inside a logical region.
+fn contains(r: &Region, x: i32, y: i32) -> bool {
+    x >= r.x && x < r.x + r.w as i32 && y >= r.y && y < r.y + r.h as i32
 }
 
 /// The single node with `"focused": true` in a sway tree (the active container).
@@ -216,6 +298,56 @@ mod tests {
     // `hyprctl -j activewindow` gives `at`/`size` pairs in global logical coords.
     const HYPR_ACTIVEWINDOW: &str =
         r#"{"address":"0x55","class":"foot","title":"foot","at":[120,340],"size":[800,600]}"#;
+
+    // A trimmed sway `get_tree`: an output with a visible workspace (firefox, with a
+    // 20px title-bar `window_rect`) and a *hidden* workspace whose window (vim) covers
+    // the same coordinates — sway keeps its geometry even though it's off screen.
+    const SWAY_TREE: &str = r#"{
+      "type":"root","rect":{"x":0,"y":0,"width":3840,"height":1440},
+      "nodes":[{
+        "type":"output","name":"DP-4","rect":{"x":0,"y":0,"width":3840,"height":1440},
+        "nodes":[
+          {
+            "type":"workspace","name":"1","visible":true,
+            "rect":{"x":0,"y":0,"width":3840,"height":1440},
+            "nodes":[{
+              "type":"con","app_id":"firefox","name":"Page Title","visible":true,
+              "rect":{"x":100,"y":100,"width":800,"height":600},
+              "window_rect":{"x":0,"y":20,"width":800,"height":580}
+            }]
+          },
+          {
+            "type":"workspace","name":"2","visible":false,
+            "rect":{"x":0,"y":0,"width":3840,"height":1440},
+            "nodes":[{
+              "type":"con","app_id":"vim","name":"editor","visible":false,
+              "rect":{"x":100,"y":100,"width":800,"height":600}
+            }]
+          }
+        ]
+      }]
+    }"#;
+
+    #[test]
+    fn sway_window_at_finds_visible_window_and_content_rect() {
+        let v: serde_json::Value = serde_json::from_str(SWAY_TREE).unwrap();
+        let w = sway_window_at(&v, 200, 200).expect("window under the point");
+        // The visible window wins, never the one on the hidden workspace.
+        assert_eq!(w.app_id, "firefox");
+        assert_eq!(w.title, "Page Title");
+        // Content rect = node rect shifted by the 20px title bar.
+        assert_eq!(
+            w.rect,
+            Region {
+                x: 100,
+                y: 120,
+                w: 800,
+                h: 580
+            }
+        );
+        // A point on the empty desktop hits no window.
+        assert!(sway_window_at(&v, 2000, 1300).is_none());
+    }
 
     #[test]
     fn hypr_focused_output_picks_focused_monitor() {

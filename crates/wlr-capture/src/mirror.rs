@@ -352,6 +352,19 @@ pub enum Source {
         /// Magnification factor (initial window size = region × zoom).
         zoom: f32,
     },
+    /// Mirror (and magnify) a sub-rectangle of a *window*. Captures the toplevel
+    /// (so it follows the window across moves/workspaces) and shows only `crop` of it.
+    ToplevelRegion {
+        /// `ext-foreign-toplevel` identifier of the window to capture.
+        id: String,
+        /// Normalized sub-rectangle of the region within the window's content.
+        crop: [f32; 4],
+        /// Logical region size; fixes the window aspect ratio.
+        region_w: u32,
+        region_h: u32,
+        /// Magnification factor (initial window size = region × zoom).
+        zoom: f32,
+    },
 }
 
 /// Window chrome + behaviour for [`run`].
@@ -369,14 +382,22 @@ pub struct Config {
 
 /// Run the mirror until the source closes or the user quits.
 pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
+    let conn = Connection::connect_to_env()?;
+    run_on(&conn, source, config)
+}
+
+/// [`run`] on a caller-provided connection, so a process that first ran another GPU/EGL
+/// overlay (e.g. the region selector) reuses the same `wl_display` and `EGLDisplay`
+/// instead of opening a second one — a second EGL connection in one process can alias a
+/// freed display and fail (`eglCreateWindowSurface: BadAlloc`).
+pub fn run_on(conn: &Connection, source: Source, config: Config) -> anyhow::Result<()> {
     let Config {
         app_id,
         label,
         icon,
         relaunch,
     } = config;
-    let conn = Connection::connect_to_env()?;
-    let (globals, event_queue) = registry_queue_init::<State>(&conn)?;
+    let (globals, event_queue) = registry_queue_init::<State>(conn)?;
     let qh = event_queue.handle();
     let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
     let lh = event_loop.handle();
@@ -395,6 +416,13 @@ pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
     let (init_w, init_h, fixed_aspect, aspect0, crop_uv) = match &source {
         Source::Toplevel(_) => (DEFAULT_W, DEFAULT_W * 9 / 16, false, None, None),
         Source::Region {
+            crop,
+            region_w,
+            region_h,
+            zoom,
+            ..
+        }
+        | Source::ToplevelRegion {
             crop,
             region_w,
             region_h,
@@ -423,7 +451,9 @@ pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
     // Capture thread streams frames over a calloop channel; we repaint on each.
     // A region mirrors its covering output (the host crops to the region's sub-rect).
     let stream_source = match &source {
-        Source::Toplevel(id) => stream::Source::Toplevel(id.clone()),
+        Source::Toplevel(id) | Source::ToplevelRegion { id, .. } => {
+            stream::Source::Toplevel(id.clone())
+        }
         Source::Region { output, .. } => stream::Source::Output(output.clone()),
     };
     let (tx, ch): (_, Channel<PipMsg>) = channel();

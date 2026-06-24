@@ -64,21 +64,49 @@ A floating, always-on-top window that mirrors live content. This is the former
 `wlr-pip`, now a `wlr-peek` subcommand.
 
 ```console
+$ wlr-peek mirror                  # no source: launch wlr-chooser to pick a window
 $ wlr-peek mirror <ID>             # mirror a window (ID as printed by wlr-chooser)
-$ wlr-peek mirror                  # no ID: launch wlr-chooser to pick one
-$ wlr-peek mirror -g "100,200 640x480"        # live magnifier of a fixed region
-$ wlr-peek mirror -g "100,200 640x480" --zoom 4
+$ wlr-peek mirror -w               # pick a window via the chooser (explicit)
+$ wlr-peek mirror -s               # select a region with the mouse, then mirror it
+$ wlr-peek mirror -o DP-4          # mirror a whole output / screen
+$ wlr-peek mirror --current-output # the focused output
+$ wlr-peek mirror -a               # the active window's area (needs focus info)
+$ wlr-peek mirror -g "100,200 640x480" --zoom 4   # a fixed region, magnified
+```
+
+It takes the **same source flags as the rest of wlr-utils**: a window (`id`,
+`-w`/`--pick-window`, `-a`/`--active-window`), or a region/output mirrored as a live
+loupe (`-s` interactive, `-g "X,Y WxH"`, `-o NAME`, `--current-output`), magnified by
+`--zoom` (default ×2). Region/output mode is mono-output for now (clipped to the output
+its top-left corner sits on). Keep the window outside the mirrored region to avoid
+feedback.
+
+For a region, **`--follow`** chooses what it tracks: `output` (default — shows whatever
+workspace is on that screen) or `window` — captures the **window under the region** and
+crops to it, so the loupe follows that window across moves and workspaces (needs
+compositor focus info; falls back to `output` if no window is under the region).
+
+```console
+$ wlr-peek mirror -s --follow window   # loupe that sticks to the window you picked
 ```
 
 Drag to move, the bottom-right grip to resize, the toolbar to collapse to a badge or
 close; **Space** freezes, **c** collapses, **+/-** or the wheel set opacity, **r**
-re-picks, **Esc** closes. Pair with sway rules `floating enable, sticky enable` for
-always-on-top across workspaces.
+re-picks (window mode), **Esc** closes. Pair with sway rules `floating enable, sticky
+enable` for always-on-top across workspaces.
 
-With `-g "X,Y WxH"` it mirrors a fixed logical region instead of a window — a live,
-always-on-top loupe, magnified by `--zoom` (default ×2). Keep the window outside the
-region to avoid feedback. Mono-output for now (the region is clipped to the output
-its top-left corner sits on); `r` re-pick is disabled in region mode.
+### `region` — select a region/point, print its geometry (slurp replacement)
+
+Reuses the same frozen overlay as `wlr-shot -s` to select a region with the mouse and
+print it as `X,Y WxH` (slurp's format) — a native, dependency-free slurp replacement.
+Exits 1 if cancelled (Esc).
+
+```console
+$ wlr-peek region                  # drag a region → "X,Y WxH"
+$ wlr-peek region -p               # pick a point → "X,Y"
+$ wlr-peek region -f '%x %y %w %h' # custom format
+$ grim -g "$(wlr-peek region)" shot.png        # feed any slurp-compatible tool
+```
 
 ### `watch` — change monitor
 
