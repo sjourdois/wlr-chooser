@@ -31,8 +31,9 @@ libavdevice-dev = '*'
 libswscale-dev = '*'
 libswresample-dev = '*'
 libva-dev = '*'
-# wlr-shot `audio` — native PipeWire capture.
-libpipewire-0.3-dev = '*'
+# wlr-shot `audio` — native PipeWire capture. Quote the key: the dots in the package
+# name would otherwise be parsed as nested TOML tables (→ a bogus `libpipewire-0`).
+"libpipewire-0.3-dev" = '*'
 # wlr-peek `ocr` — Tesseract/Leptonica.
 libtesseract-dev = '*'
 libleptonica-dev = '*'
