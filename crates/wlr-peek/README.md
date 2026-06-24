@@ -80,6 +80,45 @@ always-on-top loupe, magnified by `--zoom` (default ×2). Keep the window outsid
 region to avoid feedback. Mono-output for now (the region is clipped to the output
 its top-left corner sits on); `r` re-pick is disabled in region mode.
 
+### `watch` — change monitor
+
+Streams a source and fires when its content **changes**, or once it goes **idle**
+(stops changing). Same sources as the other tools: `-s` (interactive region), `-g`,
+`-o`, `--current-output`, `-w`/`--pick-window`, `-a` (a region is single-output, like
+`mirror`/`record`).
+
+```console
+$ wlr-peek watch -g "$(slurp)" && notify-send "it changed"   # fire once, then notify
+$ wlr-peek watch -w "$ID" --on idle --for 5s                 # wake when the window settles
+$ wlr-peek watch -o DP-4 --on change --threshold 2 --repeat --exec 'mpc next'
+```
+
+- `--on change` (default) fires when the content changes; `--on idle` fires once it
+  has been stable for `--for` (e.g. `5s`).
+- `--threshold PCT` ignores changes smaller than that percentage of the watched
+  pixels (default 0 = any change) — raise it to skip a blinking cursor or clock.
+- By default it prints one line and exits 0 on the first trigger (composes with
+  `&&`); `--repeat` keeps watching and fires every time. `--exec CMD` runs a shell
+  command on each trigger. `--timeout DUR` gives up (exit 2) if nothing fires.
+
+Capture is damage-driven, so `watch` is cheap: a static source delivers no frames.
+
+### `grep` — find text on screen (visual grep)
+
+OCRs a source and prints where matching text is, in global logical coordinates
+(slurp-compatible `X,Y WxH`, so it feeds `mirror`/`shot`/other tools). Needs the
+`ocr` feature (Tesseract).
+
+```console
+$ wlr-peek grep --current-output "TODO"
+2741,318 58x19	TODO
+$ wlr-peek grep -g "$(slurp)" -i error      # case-insensitive, in a region
+```
+
+Sources: `-g`, `-o`, `-a`, `--current-output`, or (default) an interactive region.
+Matching is a substring (`-i` for case-insensitive); coordinates map back to a single
+output. Exits 1 when nothing matches, like `grep`.
+
 ## License
 
 MIT OR Apache-2.0.

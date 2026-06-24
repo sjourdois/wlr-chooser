@@ -13,6 +13,7 @@
 //! ratio; collapsing shrinks it, and any new frame while collapsed restores it.
 
 use crate::render::{DmabufImporter, Gpu};
+use crate::stream;
 use crate::theme::Theme;
 use crate::tr;
 use crate::wl;
@@ -420,15 +421,13 @@ pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
     window.commit();
 
     // Capture thread streams frames over a calloop channel; we repaint on each.
+    // A region mirrors its covering output (the host crops to the region's sub-rect).
+    let stream_source = match &source {
+        Source::Toplevel(id) => stream::Source::Toplevel(id.clone()),
+        Source::Region { output, .. } => stream::Source::Output(output.clone()),
+    };
     let (tx, ch): (_, Channel<PipMsg>) = channel();
-    match source {
-        Source::Toplevel(id) => {
-            std::thread::spawn(move || capture_thread(id, move |m| tx.send(m).is_ok()));
-        }
-        Source::Region { output, .. } => {
-            std::thread::spawn(move || output_capture_thread(output, move |m| tx.send(m).is_ok()));
-        }
-    }
+    std::thread::spawn(move || capture_thread(stream_source, move |m| tx.send(m).is_ok()));
     lh.insert_source(ch, |event, _, state: &mut State| {
         if let ChannelEvent::Msg(m) = event {
             state.on_msg(m);
@@ -949,15 +948,14 @@ pub enum PipMsg {
     Gone,
 }
 
-/// Capture thread body: open one persistent session for the window whose
-/// `ext-foreign-toplevel` identifier matches `identifier`, then stream its frames
-/// until it closes or the host drops the channel. Reopens the session if the
-/// compositor transiently stops it (e.g. on resize).
+/// Capture thread body: open its own Wayland connection and stream `source` via the
+/// shared [`stream::Stream`] driver, forwarding each frame (or the source's demise)
+/// as a [`PipMsg`] until the source closes or the host drops the channel.
 ///
 /// `sink` consumes each message and returns `false` once the receiver is gone (so
 /// the thread can stop). It is generic so the host (calloop channel) and the
 /// headless bench (std mpsc) can both drive it.
-pub fn capture_thread(identifier: String, mut sink: impl FnMut(PipMsg) -> bool) {
+pub fn capture_thread(source: stream::Source, mut sink: impl FnMut(PipMsg) -> bool) {
     let mut client = match wl::Client::connect() {
         Ok(c) => c,
         Err(e) => {
@@ -967,47 +965,11 @@ pub fn capture_thread(identifier: String, mut sink: impl FnMut(PipMsg) -> bool) 
         }
     };
 
-    let mut session: Option<wl::SessionId> = None;
-    let appear_deadline = Instant::now() + APPEAR_GRACE;
-
+    let mut s = stream::Stream::new(source, APPEAR_GRACE);
     loop {
-        if client.refresh().is_err() {
-            sink(PipMsg::Gone);
-            return;
-        }
-
-        let present = client
-            .toplevels()
-            .iter()
-            .any(|t| t.identifier == identifier);
-        if session.is_none() {
-            match client
-                .toplevels()
-                .iter()
-                .find(|t| t.identifier == identifier)
-                .cloned()
-            {
-                Some(t) => {
-                    if let Ok(id) = client.open_toplevel_session(&t) {
-                        session = Some(id);
-                    }
-                }
-                // Not mapped yet: keep polling until the grace period elapses.
-                None if Instant::now() >= appear_deadline => {
-                    sink(PipMsg::Gone);
-                    return;
-                }
-                None => {}
-            }
-        } else if !present {
-            // We had a live session and the source vanished: the window closed.
-            sink(PipMsg::Gone);
-            return;
-        }
-
-        let (frames, failed) = client.poll(ROUND);
+        let step = s.step(&mut client, ROUND);
         // Single source, so every delivered frame is ours.
-        for (_id, frame) in frames {
+        for frame in step.frames {
             let msg = match frame {
                 wl::Frame::Shm(img) => PipMsg::Shm {
                     w: img.width as usize,
@@ -1020,80 +982,9 @@ pub fn capture_thread(identifier: String, mut sink: impl FnMut(PipMsg) -> bool) 
                 return; // host gone
             }
         }
-        // A stopped session (e.g. resize): drop it; we reopen next round if the
-        // window is still listed.
-        for id in failed {
-            if session.as_ref() == Some(&id) {
-                session = None;
-            }
-            client.close_session(&id);
-        }
-    }
-}
-
-/// Capture thread body for region mirroring: stream the named output's frames (the
-/// host crops to the region's sub-rectangle). Mirrors [`capture_thread`] but keyed
-/// on an output name; ends if the output disappears (e.g. unplugged).
-pub fn output_capture_thread(name: String, mut sink: impl FnMut(PipMsg) -> bool) {
-    let mut client = match wl::Client::connect() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("wlr-capture: mirror: {e:#}");
+        if step.end.is_some() {
             sink(PipMsg::Gone);
             return;
-        }
-    };
-
-    let mut session: Option<wl::SessionId> = None;
-    let appear_deadline = Instant::now() + APPEAR_GRACE;
-
-    loop {
-        if client.refresh().is_err() {
-            sink(PipMsg::Gone);
-            return;
-        }
-
-        let output = client.outputs().iter().find(|o| o.name == name).cloned();
-        if session.is_none() {
-            match output {
-                Some(o) => {
-                    if let Ok(id) = client.open_output_session(&o) {
-                        session = Some(id);
-                    }
-                }
-                // Not present yet: keep polling until the grace period elapses.
-                None if Instant::now() >= appear_deadline => {
-                    sink(PipMsg::Gone);
-                    return;
-                }
-                None => {}
-            }
-        } else if output.is_none() {
-            // We had a live session and the output vanished (e.g. unplugged).
-            sink(PipMsg::Gone);
-            return;
-        }
-
-        let (frames, failed) = client.poll(ROUND);
-        // Single source, so every delivered frame is ours.
-        for (_id, frame) in frames {
-            let msg = match frame {
-                wl::Frame::Shm(img) => PipMsg::Shm {
-                    w: img.width as usize,
-                    h: img.height as usize,
-                    rgba: img.rgba,
-                },
-                wl::Frame::Dmabuf(frame) => PipMsg::Dmabuf { frame },
-            };
-            if !sink(msg) {
-                return; // host gone
-            }
-        }
-        for id in failed {
-            if session.as_ref() == Some(&id) {
-                session = None;
-            }
-            client.close_session(&id);
         }
     }
 }

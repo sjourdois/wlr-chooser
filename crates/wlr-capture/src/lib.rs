@@ -8,6 +8,9 @@
 //! - [`gl`]: EGL/GL dma-buf import + headless readback ([`gl::GpuReadback`]).
 //! - [`sink`]: the [`sink::FrameSink`] seam shared by screenshot/record/timelapse,
 //!   with GPU dma-buf readback under the default path.
+//! - [`stream`]: the shared live-capture session driver (arm/poll/reopen/give-up),
+//!   used by the mirror, recorder and change monitor.
+//! - [`diff`]: a frame-difference metric for change detection.
 //!
 //! Behind the `compose` feature (resamples with `image`):
 //! - [`capture`]: resolve a source (output/window/region) to a [`wl::CapturedImage`],
@@ -35,9 +38,11 @@
 //! the capture engine + readback without pulling in the toolkit.
 
 pub mod clipboard;
+pub mod diff;
 pub mod gl;
 pub mod i18n;
 pub mod sink;
+pub mod stream;
 pub mod wl;
 
 #[cfg(feature = "compose")]

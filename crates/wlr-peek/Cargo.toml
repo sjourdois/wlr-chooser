@@ -1,6 +1,6 @@
 [package]
 name = "wlr-peek"
-description = "Inspect the screen on wlroots: colour picker (OCR & live magnifier coming next)"
+description = "Inspect the screen on wlroots: colour picker, loupe, OCR, live mirror, change monitor, visual grep"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,10 +17,14 @@ name = "wlr-peek"
 path = "src/main.rs"
 
 [features]
-default = ["ocr", "i18n"]
+default = ["ocr", "watch", "i18n"]
 # Localised UI (the overlay hint) via Fluent. On by default; `--no-default-features`
 # builds English-only with no Fluent dependency.
 i18n = ["wlr-capture/i18n"]
+# The change monitor (`wlr-peek watch`): stream a source and fire on change / idle.
+# On by default; pulls no extra crate (the streaming + diff primitives live in the
+# engine core) but enables `focus` for the active-window / current-output sources.
+watch = ["wlr-capture/focus"]
 # OCR (`wlr-peek ocr`) via the Tesseract/Leptonica bindings. On by default. The build
 # links system `libtesseract`/`libleptonica` (`-dev` packages) and uses libclang for
 # bindgen; the `eng` tessdata language pack is needed at runtime. It also enables the
@@ -51,8 +55,9 @@ license-file = ["../../LICENSE-MIT", "0"]
 depends = "$auto, libegl1"
 extended-description = """\
 A screen inspection tool for wlroots compositors built on the shared wlr-capture \
-engine: a colour picker (pipette) with a magnifying loupe; OCR and a live magnifier \
-are on the roadmap."""
+engine: a colour picker (pipette) with a magnifying loupe, a frozen full-screen \
+magnifier, OCR, a floating live mirror (picture-in-picture / region loupe), a change \
+monitor, and a visual grep."""
 assets = [
     ["../../target/release/wlr-peek", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/wlr-peek/README.md", "644"],

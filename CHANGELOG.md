@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`wlr-peek watch`**: a change monitor. Streams a source (region `-g`/`-s`, output
+  `-o`/`--current-output`, or window `-w`/`--pick-window`/`-a`) and fires `--on
+  change` or `--on idle` (stable for `--for`). `--threshold PCT` ignores changes
+  below that fraction of the watched pixels (skips a blinking cursor/clock); prints
+  one line and exits 0 on the first trigger (composes with `&&`), or `--repeat` +
+  `--exec CMD` to act every time; `--timeout` gives up (exit 2).
+- **`wlr-peek grep`**: a visual grep. OCRs a source and prints where matching text is
+  in global logical coordinates (slurp-compatible `X,Y WxH`), `-i` for
+  case-insensitive; exits 1 on no match like `grep` (needs the `ocr` feature).
+- **`wlr-capture`** engine: a shared live-capture session driver (`stream` — arm /
+  poll / reopen / give-up, used by the mirror, recorder and monitor) and a
+  frame-difference metric (`diff`) for change detection. The mirror and `wlr-shot
+  record` now run on the shared driver instead of bespoke loops.
 - **`wlr-shot`**: a new screen-capture binary (built on the shared `wlr-capture`
   engine). `wlr-shot screenshot` captures a full output (`-o`), a logical region
   (`-g "X,Y WxH"`, slurp-compatible, stitched across the outputs it covers), or a

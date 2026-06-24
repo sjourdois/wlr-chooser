@@ -33,6 +33,12 @@ enum Cmd {
     /// Recognise text in a screen region (OCR, via Tesseract).
     #[cfg(feature = "ocr")]
     Ocr(OcrArgs),
+    /// Watch a region, window or output and act when it changes (or stops changing).
+    #[cfg(feature = "watch")]
+    Watch(WatchArgs),
+    /// Find text on screen (OCR) and print where it is — a visual grep.
+    #[cfg(feature = "ocr")]
+    Grep(GrepArgs),
     /// Internal: serve a clipboard selection read from stdin. Spawned detached by
     /// `color --clipboard`; not meant to be run by hand.
     #[command(hide = true)]
@@ -77,6 +83,10 @@ fn main() {
         Cmd::Mirror(args) => mirror(args),
         #[cfg(feature = "ocr")]
         Cmd::Ocr(args) => ocr(args),
+        #[cfg(feature = "watch")]
+        Cmd::Watch(args) => watch(args),
+        #[cfg(feature = "ocr")]
+        Cmd::Grep(args) => grep(args),
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {
@@ -395,14 +405,15 @@ fn clean_ocr(text: &str) -> String {
     out
 }
 
-/// Run Tesseract over a captured image and return the recognised text.
+/// Build a Tesseract instance with the captured image loaded, ready to read text or
+/// positions. PNG-encodes the capture (lossless, cheap) since Tesseract reads an
+/// encoded image from memory.
 #[cfg(feature = "ocr")]
-fn run_ocr(img: &wl::CapturedImage, lang: &str) -> Result<String> {
+fn ocr_engine(img: &wl::CapturedImage, lang: &str) -> Result<leptess::LepTess> {
     use std::io::Cursor;
     if img.width == 0 || img.height == 0 {
         anyhow::bail!("empty image (region off-screen?)");
     }
-    // Tesseract reads an encoded image from memory; PNG is lossless and cheap here.
     let rgba = image::RgbaImage::from_raw(img.width, img.height, img.rgba.clone())
         .context("inconsistent dimensions/buffer")?;
     let mut png = Vec::new();
@@ -417,11 +428,176 @@ fn run_ocr(img: &wl::CapturedImage, lang: &str) -> Result<String> {
     // Screen captures carry no DPI metadata; set one (after the image) so Tesseract
     // skips guessing it. Must follow set_image, or libtesseract warns and ignores it.
     lt.set_source_resolution(96);
-    lt.get_utf8_text().context("extracting text")
+    Ok(lt)
+}
+
+/// Run Tesseract over a captured image and return the recognised text.
+#[cfg(feature = "ocr")]
+fn run_ocr(img: &wl::CapturedImage, lang: &str) -> Result<String> {
+    ocr_engine(img, lang)?
+        .get_utf8_text()
+        .context("extracting text")
+}
+
+/// Visual grep: OCR a source and print where matching text is.
+#[cfg(feature = "ocr")]
+#[derive(Args)]
+struct GrepArgs {
+    /// Substring to search for in the recognised text.
+    pattern: String,
+    /// Search this logical region, `"X,Y WxH"` (the format slurp prints).
+    #[arg(short = 'g', long, value_name = "GEOM", group = "source")]
+    geometry: Option<String>,
+    /// Search this whole named output (e.g. `DP-4`).
+    #[arg(short = 'o', long, value_name = "NAME", group = "source")]
+    output: Option<String>,
+    /// Search the active (focused) window — needs compositor focus info.
+    #[arg(short = 'a', long, group = "source")]
+    active_window: bool,
+    /// Search the focused output — needs compositor focus info.
+    #[arg(long, group = "source")]
+    current_output: bool,
+    /// Tesseract language(s), e.g. `eng`, `fra`, `fra+eng`.
+    #[arg(short = 'l', long, default_value = "eng")]
+    lang: String,
+    /// Case-insensitive match.
+    #[arg(short = 'i', long)]
+    ignore_case: bool,
+}
+
+/// OCR the source and print each matching word as `X,Y WxH<TAB>text` in global
+/// logical coordinates (slurp-compatible geometry, so it can feed other tools).
+/// Exits 1 if nothing matched, like `grep`.
+#[cfg(feature = "ocr")]
+fn grep(args: GrepArgs) -> Result<()> {
+    use std::io::Write;
+    let mut client = wl::Client::connect().context("Wayland connection")?;
+    client.refresh().ok();
+
+    let (img, rect) = grep_source(&mut client, &args)?;
+    let tsv = ocr_engine(&img, &args.lang)?
+        .get_tsv_text(0)
+        .context("extracting text positions")?;
+
+    let needle = if args.ignore_case {
+        args.pattern.to_lowercase()
+    } else {
+        args.pattern.clone()
+    };
+    // Map word boxes (image pixels) to global logical coordinates.
+    let sx = rect.w as f64 / img.width.max(1) as f64;
+    let sy = rect.h as f64 / img.height.max(1) as f64;
+    let mut out = std::io::stdout().lock();
+    let mut found = 0u32;
+    for w in parse_tsv_words(&tsv) {
+        let hay = if args.ignore_case {
+            w.text.to_lowercase()
+        } else {
+            w.text.clone()
+        };
+        if !hay.contains(&needle) {
+            continue;
+        }
+        let x = rect.x + (w.left as f64 * sx).round() as i32;
+        let y = rect.y + (w.top as f64 * sy).round() as i32;
+        let gw = (w.width as f64 * sx).round() as u32;
+        let gh = (w.height as f64 * sy).round() as u32;
+        // Stop quietly if stdout closes (e.g. piped to `head`), rather than panicking.
+        if writeln!(out, "{x},{y} {gw}x{gh}\t{}", w.text).is_err() {
+            return Ok(());
+        }
+        found += 1;
+    }
+    if found == 0 {
+        std::process::exit(1); // no match, like grep
+    }
+    Ok(())
+}
+
+/// One OCR'd word with its bounding box, in image pixels.
+#[cfg(feature = "ocr")]
+struct TsvWord {
+    left: i32,
+    top: i32,
+    width: i32,
+    height: i32,
+    text: String,
+}
+
+/// Parse Tesseract TSV, yielding word-level rows (level 5) with non-empty text.
+/// Columns: level page block par line word left top width height conf text.
+#[cfg(feature = "ocr")]
+fn parse_tsv_words(tsv: &str) -> Vec<TsvWord> {
+    let mut out = Vec::new();
+    for line in tsv.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 || f[0] != "5" {
+            continue;
+        }
+        let text = f[11].trim();
+        if text.is_empty() {
+            continue;
+        }
+        let (Ok(left), Ok(top), Ok(width), Ok(height)) =
+            (f[6].parse(), f[7].parse(), f[8].parse(), f[9].parse())
+        else {
+            continue;
+        };
+        out.push(TsvWord {
+            left,
+            top,
+            width,
+            height,
+            text: text.to_string(),
+        });
+    }
+    out
+}
+
+/// Resolve the grep source to a captured image plus its logical rectangle (so word
+/// boxes map back to global coordinates). Single output for now.
+#[cfg(feature = "ocr")]
+fn grep_source(client: &mut wl::Client, args: &GrepArgs) -> Result<(wl::CapturedImage, Region)> {
+    if let Some(geo) = &args.geometry {
+        let r = capture::parse_geometry(geo)?;
+        Ok((capture::capture_region(client, r, DEFAULT_BUDGET)?, r))
+    } else if let Some(name) = &args.output {
+        let out = client
+            .outputs()
+            .iter()
+            .find(|o| o.name == *name)
+            .cloned()
+            .with_context(|| format!("output '{name}' not found"))?;
+        Ok((
+            capture::capture_output(client, Some(name), DEFAULT_BUDGET)?,
+            out.logical_rect(),
+        ))
+    } else if args.active_window {
+        let r = active_window_rect()?;
+        Ok((capture::capture_region(client, r, DEFAULT_BUDGET)?, r))
+    } else if args.current_output {
+        let name = focused_output()?;
+        let out = client
+            .outputs()
+            .iter()
+            .find(|o| o.name == name)
+            .cloned()
+            .with_context(|| format!("output '{name}' not found"))?;
+        Ok((
+            capture::capture_output(client, Some(&name), DEFAULT_BUDGET)?,
+            out.logical_rect(),
+        ))
+    } else {
+        let caps = capture::capture_all(client, DEFAULT_BUDGET)?;
+        match overlay::select_region(&caps)? {
+            Some(region) => Ok((capture::composite(&caps, region)?, region)),
+            None => std::process::exit(1), // cancelled
+        }
+    }
 }
 
 /// The active window's logical rectangle, via compositor focus IPC.
-#[cfg(feature = "ocr")]
+#[cfg(any(feature = "ocr", feature = "watch"))]
 fn active_window_rect() -> Result<Region> {
     let backend = wlr_capture::focus::detect()
         .context("focus info unavailable (unsupported compositor); try -s or -g")?;
@@ -431,7 +607,7 @@ fn active_window_rect() -> Result<Region> {
 }
 
 /// The focused output's name, via compositor focus IPC.
-#[cfg(feature = "ocr")]
+#[cfg(any(feature = "ocr", feature = "watch"))]
 fn focused_output() -> Result<String> {
     let backend = wlr_capture::focus::detect()
         .context("focus info unavailable (unsupported compositor); specify -o NAME")?;
@@ -449,6 +625,322 @@ fn clipboard_serve(mime: &str) -> Result<()> {
         .context("reading clipboard data")?;
     wlr_capture::clipboard::serve(mime, data)
 }
+
+// ---------------------------------------------------------------------------
+// `watch` — fire when a source changes or goes idle (the `watch` feature).
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "watch")]
+mod watch_impl {
+    use super::{active_window_rect, focused_output, pick_via_chooser};
+    use anyhow::{Context, Result, bail};
+    use clap::{Args, ValueEnum};
+    use std::io::Write;
+    use std::time::{Duration, Instant};
+    use wlr_capture::wl::{self, CapturedImage, Output, Region};
+    use wlr_capture::{capture, diff, gl::GpuReadback, overlay, stream};
+
+    /// How long to wait for new content each poll round.
+    const ROUND: Duration = Duration::from_millis(200);
+
+    #[derive(Args)]
+    pub struct WatchArgs {
+        /// Watch an interactively selected region (drag on a frozen overlay).
+        #[arg(short = 's', long, group = "source")]
+        select: bool,
+        /// Watch this named output (e.g. `DP-4`). Defaults to the only output.
+        #[arg(short = 'o', long, value_name = "NAME", group = "source")]
+        output: Option<String>,
+        /// Watch this logical region, `"X,Y WxH"` (single output for now).
+        #[arg(short = 'g', long, value_name = "GEOM", group = "source")]
+        geometry: Option<String>,
+        /// Watch the window with this `ext-foreign-toplevel` identifier.
+        #[arg(short = 'w', long, value_name = "ID", group = "source")]
+        window: Option<String>,
+        /// Launch `wlr-chooser` to pick a window to watch.
+        #[arg(long, group = "source")]
+        pick_window: bool,
+        /// Watch the active (focused) window's area — needs compositor focus info.
+        #[arg(short = 'a', long, group = "source")]
+        active_window: bool,
+        /// Watch the focused output — needs compositor focus info.
+        #[arg(long, group = "source")]
+        current_output: bool,
+        /// When to fire: on each change, or once the content goes idle.
+        #[arg(long, value_enum, default_value_t = Trigger::Change)]
+        on: Trigger,
+        /// Ignore changes smaller than this percentage of the watched pixels
+        /// (default 0 = any change). Only meaningful with `--on change`.
+        #[arg(long, value_name = "PCT", default_value_t = 0.0)]
+        threshold: f64,
+        /// How long with no change counts as "idle" (e.g. `3s`). Only with `--on idle`.
+        #[arg(long = "for", value_name = "DUR", default_value = "2s")]
+        settle: String,
+        /// Give up after this long with no trigger (exit code 2). Otherwise: Ctrl-C.
+        #[arg(long, value_name = "DUR")]
+        timeout: Option<String>,
+        /// Keep watching and fire every time (default: exit after the first trigger).
+        #[arg(long)]
+        repeat: bool,
+        /// Run this shell command on each trigger (in addition to printing).
+        #[arg(long, value_name = "CMD")]
+        exec: Option<String>,
+    }
+
+    /// What makes the monitor fire.
+    #[derive(Clone, Copy, ValueEnum, PartialEq)]
+    pub enum Trigger {
+        /// Fire whenever the content changes (past `--threshold`).
+        Change,
+        /// Fire once the content has been stable for `--for`.
+        Idle,
+    }
+
+    /// What to watch: an output (optionally cropped to a region) or a window.
+    enum Target {
+        Output {
+            output: Output,
+            crop: Option<Region>,
+        },
+        Window(String),
+    }
+
+    impl Target {
+        fn label(&self) -> String {
+            match self {
+                Target::Output { output, crop: None } => format!("output {}", output.name),
+                Target::Output {
+                    output,
+                    crop: Some(c),
+                } => {
+                    format!("region {}x{} on {}", c.w, c.h, output.name)
+                }
+                Target::Window(id) => format!("window {id}"),
+            }
+        }
+    }
+
+    pub fn watch(args: WatchArgs) -> Result<()> {
+        let mut client = wl::Client::connect().context("Wayland connection")?;
+        client.refresh().ok();
+
+        let target = resolve_target(&mut client, &args)?;
+        let crop = match &target {
+            Target::Output { crop, .. } => *crop,
+            Target::Window(_) => None,
+        };
+        let source = match &target {
+            Target::Output { output, .. } => stream::Source::Output(output.name.clone()),
+            Target::Window(id) => stream::Source::Toplevel(id.clone()),
+        };
+
+        let threshold = args.threshold.clamp(0.0, 100.0);
+        let settle = parse_interval(&args.settle)?;
+        let timeout = args.timeout.as_deref().map(parse_interval).transpose()?;
+
+        eprintln!(
+            "wlr-peek: watching {} (on {}){}",
+            target.label(),
+            if args.on == Trigger::Idle {
+                "idle"
+            } else {
+                "change"
+            },
+            if args.repeat { ", Ctrl-C to stop" } else { "" }
+        );
+
+        let start = Instant::now();
+        let mut s = stream::Stream::new(source, stream::DEFAULT_GRACE);
+        let mut rb: Option<GpuReadback> = None;
+        let mut prev: Option<CapturedImage> = None;
+        let mut last_change: Option<Instant> = None;
+
+        loop {
+            if let Some(t) = timeout {
+                if start.elapsed() >= t {
+                    eprintln!("wlr-peek: no trigger within {}s", t.as_secs());
+                    std::process::exit(2);
+                }
+            }
+
+            let step = s.step(&mut client, ROUND);
+            let mut changed_pct: Option<f64> = None;
+            for frame in step.frames {
+                let mut img = stream::decode_frame(&mut rb, frame)?;
+                if let Some(c) = crop {
+                    img = img.crop(c);
+                }
+                match &prev {
+                    // First frame is the baseline — no trigger, just start the clock.
+                    None => {
+                        last_change.get_or_insert_with(Instant::now);
+                    }
+                    Some(p) => {
+                        // A real change: some pixels actually differ (frac > 0, past the
+                        // per-pixel tolerance) and the changed area meets the threshold.
+                        // The `frac > 0` guard matters at the default threshold 0, where
+                        // a compositor may still deliver identical damage frames.
+                        let frac = diff::changed_fraction(p, &img, diff::DEFAULT_TOLERANCE);
+                        if frac > 0.0 && frac * 100.0 >= threshold {
+                            changed_pct = Some(frac * 100.0);
+                            last_change = Some(Instant::now());
+                        }
+                    }
+                }
+                prev = Some(img);
+            }
+
+            match args.on {
+                Trigger::Change => {
+                    if let Some(pct) = changed_pct {
+                        if fire(&args, &format!("change {pct:.1}%"))? {
+                            return Ok(());
+                        }
+                    }
+                }
+                Trigger::Idle => {
+                    if let Some(lc) = last_change {
+                        if lc.elapsed() >= settle {
+                            if fire(&args, "idle")? {
+                                return Ok(());
+                            }
+                            last_change = Some(Instant::now()); // await the next idle period
+                        }
+                    }
+                }
+            }
+
+            if let Some(end) = step.end {
+                match end {
+                    stream::End::NeverAppeared => bail!("source did not appear"),
+                    stream::End::SourceGone => {
+                        eprintln!("wlr-peek: source gone");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Print the trigger and run `--exec`; returns `true` when the watch should stop.
+    fn fire(args: &WatchArgs, msg: &str) -> Result<bool> {
+        println!("{msg}");
+        std::io::stdout().flush().ok();
+        if let Some(cmd) = &args.exec {
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .status()
+                .with_context(|| format!("running --exec command: {cmd}"))?;
+        }
+        Ok(!args.repeat)
+    }
+
+    /// Resolve the CLI source flags (an exclusive group) to a [`Target`].
+    fn resolve_target(client: &mut wl::Client, args: &WatchArgs) -> Result<Target> {
+        if args.select {
+            let caps = capture::capture_all(client, capture::DEFAULT_BUDGET)?;
+            match overlay::select_region(&caps)? {
+                Some(region) => region_target(client, region),
+                None => std::process::exit(1), // cancelled
+            }
+        } else if let Some(geo) = &args.geometry {
+            region_target(client, capture::parse_geometry(geo)?)
+        } else if args.active_window {
+            region_target(client, active_window_rect()?)
+        } else if let Some(id) = &args.window {
+            Ok(Target::Window(id.clone()))
+        } else if args.pick_window {
+            Ok(Target::Window(
+                pick_via_chooser().context("no window picked")?,
+            ))
+        } else {
+            let name = if args.current_output {
+                Some(focused_output()?)
+            } else {
+                args.output.clone()
+            };
+            Ok(Target::Output {
+                output: resolve_output(client, name.as_deref())?,
+                crop: None,
+            })
+        }
+    }
+
+    /// The output the region's top-left corner sits on, plus the physical crop within
+    /// that output's capture (single output for now).
+    fn region_target(client: &wl::Client, region: Region) -> Result<Target> {
+        if region.is_empty() {
+            bail!("empty region");
+        }
+        let corner = Region {
+            x: region.x,
+            y: region.y,
+            w: 1,
+            h: 1,
+        };
+        let output = client
+            .outputs()
+            .iter()
+            .find(|o| o.logical_rect().intersect(&corner).is_some())
+            .cloned()
+            .context("the region's top-left corner is on no output")?;
+        let clipped = region
+            .intersect(&output.logical_rect())
+            .context("region does not overlap its output")?;
+        let crop = capture::logical_to_physical(&output, clipped);
+        Ok(Target::Output {
+            output,
+            crop: Some(crop),
+        })
+    }
+
+    /// Find a named output, or the sole output if unnamed (else list the names).
+    fn resolve_output(client: &wl::Client, name: Option<&str>) -> Result<Output> {
+        let outputs = client.outputs();
+        match name {
+            Some(n) => outputs
+                .iter()
+                .find(|o| o.name == n)
+                .cloned()
+                .with_context(|| format!("output '{n}' not found")),
+            None => match outputs {
+                [single] => Ok(single.clone()),
+                [] => bail!("no outputs available"),
+                many => {
+                    let names: Vec<&str> = many.iter().map(|o| o.name.as_str()).collect();
+                    bail!(
+                        "multiple outputs; specify -o NAME among: {}",
+                        names.join(", ")
+                    )
+                }
+            },
+        }
+    }
+
+    /// Parse a human interval like `2s`, `500ms`, `1m`, `1.5s` into a `Duration`.
+    fn parse_interval(s: &str) -> Result<Duration> {
+        let s = s.trim();
+        let err = || anyhow::anyhow!("invalid duration '{s}' (try e.g. 2s, 500ms, 1m)");
+        let (num, mult) = if let Some(n) = s.strip_suffix("ms") {
+            (n, 0.001)
+        } else if let Some(n) = s.strip_suffix('s') {
+            (n, 1.0)
+        } else if let Some(n) = s.strip_suffix('m') {
+            (n, 60.0)
+        } else {
+            (s, 1.0)
+        };
+        let secs: f64 = num.trim().parse().map_err(|_| err())?;
+        if !(secs.is_finite() && secs > 0.0) {
+            return Err(err());
+        }
+        Ok(Duration::from_secs_f64(secs * mult))
+    }
+}
+
+#[cfg(feature = "watch")]
+use watch_impl::{WatchArgs, watch};
 
 #[cfg(test)]
 mod tests {

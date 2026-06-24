@@ -284,8 +284,9 @@ mod record_impl {
     use wlr_capture::capture;
     use wlr_capture::gl::GpuReadback;
     use wlr_capture::sink::FrameSink;
+    use wlr_capture::stream;
     use wlr_capture::video::{self, VideoEncoder};
-    use wlr_capture::wl::{self, CapturedImage, Frame, Output, Region};
+    use wlr_capture::wl::{self, CapturedImage, Output, Region};
 
     /// How long to wait for new frames each poll round.
     const ROUND: Duration = Duration::from_millis(200);
@@ -488,40 +489,6 @@ mod record_impl {
         }
     }
 
-    /// Open (or reopen) a capture session for `target`. Returns `None` if the source
-    /// isn't present yet (caller keeps polling until the grace period elapses).
-    fn open_session(client: &mut wl::Client, target: &Target) -> Result<Option<wl::SessionId>> {
-        match target {
-            Target::Output { output, .. } => Ok(Some(client.open_output_session(output)?)),
-            Target::Window(id) => {
-                let Some(t) = client
-                    .toplevels()
-                    .iter()
-                    .find(|t| t.identifier == *id)
-                    .cloned()
-                else {
-                    return Ok(None);
-                };
-                Ok(Some(client.open_toplevel_session(&t)?))
-            }
-        }
-    }
-
-    /// A single mirrored source, so every delivered frame is ours: turn a [`Frame`]
-    /// into CPU pixels, reading dma-buf back lazily through `rb`.
-    fn frame_image(rb: &mut Option<GpuReadback>, frame: Frame) -> Result<CapturedImage> {
-        match frame {
-            Frame::Shm(img) => Ok(img),
-            Frame::Dmabuf(d) => {
-                let rb = match rb {
-                    Some(rb) => rb,
-                    None => rb.insert(GpuReadback::new()?),
-                };
-                rb.readback(d)
-            }
-        }
-    }
-
     pub fn record(args: RecordArgs) -> Result<()> {
         let mut client = wl::Client::connect().context("Wayland connection")?;
         client.refresh().ok();
@@ -562,6 +529,10 @@ mod record_impl {
             Target::Output { crop, .. } => *crop,
             Target::Window(_) => None,
         };
+        let stream_source = match &target {
+            Target::Output { output, .. } => stream::Source::Output(output.name.clone()),
+            Target::Window(id) => stream::Source::Toplevel(id.clone()),
+        };
 
         // Capture is damage-driven (a frame only arrives when the source changes), so
         // we emit on a fixed cadence instead: a normal recording ticks at 1/fps for a
@@ -571,8 +542,7 @@ mod record_impl {
             interval.unwrap_or_else(|| Duration::from_secs_f64(1.0 / args.fps.max(1) as f64));
 
         let mut rb: Option<GpuReadback> = None;
-        let mut session: Option<wl::SessionId> = None;
-        let appear_deadline = start + APPEAR_GRACE;
+        let mut stream = stream::Stream::new(stream_source, APPEAR_GRACE);
         let mut frames = 0u64;
         let mut last_img: Option<CapturedImage> = None; // most recent captured frame
         let mut next_tick: Option<Duration> = None; // scheduled time of the next emit
@@ -587,25 +557,6 @@ mod record_impl {
                     break;
                 }
             }
-            if client.refresh().is_err() {
-                break;
-            }
-
-            // (Re)open the session; bail if the source never appears / has gone.
-            if session.is_none() {
-                match open_session(&mut client, &target)? {
-                    Some(id) => session = Some(id),
-                    None if Instant::now() >= appear_deadline => {
-                        bail!("source did not appear within {}s", APPEAR_GRACE.as_secs())
-                    }
-                    None => {}
-                }
-            } else if let Target::Window(id) = &target {
-                // A live session whose window vanished: it closed — stop cleanly.
-                if !client.toplevels().iter().any(|t| t.identifier == *id) {
-                    break;
-                }
-            }
 
             // Poll for new content, but never overshoot the next emit tick.
             let budget = match next_tick {
@@ -614,15 +565,23 @@ mod record_impl {
                     .clamp(Duration::from_millis(1), ROUND),
                 None => ROUND,
             };
-            let (got, failed) = client.poll(budget);
-            for (_id, frame) in got {
-                let mut img = frame_image(&mut rb, frame)?;
+            let step = stream.step(&mut client, budget);
+            for frame in step.frames {
+                let mut img = stream::decode_frame(&mut rb, frame)?;
                 if let Some(c) = crop {
                     img = img.crop(c);
                 }
                 last_img = Some(img);
                 // Anchor the cadence to the first captured frame (no startup catch-up).
                 next_tick.get_or_insert_with(|| start.elapsed());
+            }
+            if let Some(end) = step.end {
+                match end {
+                    stream::End::NeverAppeared => {
+                        bail!("source did not appear within {}s", APPEAR_GRACE.as_secs())
+                    }
+                    stream::End::SourceGone => break, // window closed / output gone
+                }
             }
 
             // Emit the latest frame at every elapsed tick (repeating it when the
@@ -634,14 +593,6 @@ mod record_impl {
                     nt += frame_interval;
                 }
                 next_tick = Some(nt);
-            }
-
-            // A stopped session (e.g. on resize): drop it and reopen next round.
-            for id in failed {
-                if session.as_ref() == Some(&id) {
-                    session = None;
-                }
-                client.close_session(&id);
             }
 
             if last_log.elapsed() >= Duration::from_secs(1) {
