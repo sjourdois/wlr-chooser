@@ -43,7 +43,7 @@ audio-fallback = ["audio", "wlr-capture/audio-fallback"]
 # the optional `gpu` feature adds the dma-buf path + readback.
 # `overlay` (the frozen region selector) pulls the egui/EGL toolkit + `compose`
 # (source→image); `focus` adds active-window / current-output via compositor IPC.
-wlr-capture = { path = "../wlr-capture", version = "1.2.0", default-features = false, features = ["overlay", "focus"] }
+wlr-capture = { path = "../wlr-capture", version = "1.3.0", default-features = false, features = ["overlay", "focus"] }
 anyhow.workspace = true
 clap.workspace = true
 # png comes from the workspace base; add jpeg + pnm (PPM) for `--type`, and gif for

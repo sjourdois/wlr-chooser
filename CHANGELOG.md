@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## Unreleased
 
+## 1.3.0 — 2026-06-25
+
 ### Added
 
 - **`wlr-shot`** — a new screen-capture tool. `screenshot` captures an output (`-o`), a

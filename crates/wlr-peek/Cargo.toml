@@ -37,7 +37,7 @@ ocr = ["dep:leptess", "dep:image", "wlr-capture/focus"]
 # The shared engine: `overlay` (the frozen point-pick overlay with its loupe) pulls
 # the egui toolkit + `compose` (source→image); `mirror` is the floating live-mirror
 # host (the `mirror` subcommand: window PiP + live region magnifier).
-wlr-capture = { path = "../wlr-capture", version = "1.2.0", default-features = false, features = ["overlay", "mirror"] }
+wlr-capture = { path = "../wlr-capture", version = "1.3.0", default-features = false, features = ["overlay", "mirror"] }
 anyhow.workspace = true
 # Single-instance advisory lock (flock) for `mirror --window`.
 rustix.workspace = true
