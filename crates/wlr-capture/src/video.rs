@@ -710,14 +710,20 @@ mod tests {
 
     /// Hardware NVENC path — the default on an NVIDIA box. Feeds NV12 CPU frames the
     /// encoder uploads internally (no hardware frame pool, unlike VAAPI).
+    ///
+    /// `#[ignore]`d: a CI runner has the `h264_nvenc` codec *compiled* but no NVIDIA
+    /// hardware, so opening it fails rather than skipping. Run locally on a GPU box with
+    /// `--ignored`.
     #[test]
+    #[ignore]
     fn encodes_nvenc() {
         run_encode(Backend::Nvenc);
     }
 
-    /// Hardware VAAPI path — exercises the `av_hwframe` upload to a surface pool.
-    /// Skips unless a usable render node is present (the test forces renderD128).
+    /// Hardware VAAPI path — exercises the `av_hwframe` upload to a surface pool. Needs a
+    /// real render node, so `#[ignore]`d in CI (run locally with `--ignored`).
     #[test]
+    #[ignore]
     fn encodes_vaapi() {
         run_encode(Backend::Vaapi);
     }
