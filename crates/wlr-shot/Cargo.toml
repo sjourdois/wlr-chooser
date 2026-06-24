@@ -29,7 +29,7 @@ gpu = ["wlr-capture/gpu"]
 # libx264) via the engine's `video` sink. On by default — disable it
 # (`--no-default-features --features i18n`) for a screenshots-only build with no
 # FFmpeg/libav* build dependency.
-video = ["wlr-capture/video", "dep:ctrlc"]
+video = ["wlr-capture/video", "dep:ctrlc", "dep:webp"]
 
 [dependencies]
 # Screenshots only need CPU pixels, so we build the engine without the GPU path
@@ -40,10 +40,13 @@ video = ["wlr-capture/video", "dep:ctrlc"]
 wlr-capture = { path = "../wlr-capture", version = "1.2.0", default-features = false, features = ["overlay", "focus"] }
 anyhow.workspace = true
 clap.workspace = true
-# png comes from the workspace base; add jpeg + pnm (PPM) for `--type`.
-image = { workspace = true, features = ["jpeg", "pnm"] }
+# png comes from the workspace base; add jpeg + pnm (PPM) for `--type`, and gif for
+# animated-GIF recording output (`record out.gif`).
+image = { workspace = true, features = ["jpeg", "pnm", "gif"] }
 # SIGINT handling for `record` (the `video` feature).
 ctrlc = { workspace = true, optional = true }
+# Animated-WebP recording output (`record out.webp`); vendors libwebp (no system dep).
+webp = { version = "0.3", optional = true }
 
 [package.metadata.deb]
 maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"

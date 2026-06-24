@@ -28,7 +28,7 @@ struct Cli {
 enum Cmd {
     /// Capture a screenshot of an output, a region, or a window.
     Screenshot(ShotArgs),
-    /// Record an output, a window, or a region to a video file (H.264).
+    /// Record an output, a window, or a region — H.264 video, or animated GIF/WebP.
     #[cfg(feature = "video")]
     Record(RecordArgs),
     /// Internal: serve a clipboard selection read from stdin. Spawned detached by
@@ -293,6 +293,142 @@ mod record_impl {
     /// How long to wait for a window/output to appear before giving up.
     const APPEAR_GRACE: Duration = Duration::from_secs(5);
 
+    /// GIF/WebP are share-sized formats, and per-frame GIF quantization is O(pixels) — a
+    /// full 4K frame is unusably slow — so both downscale the long side to a cap.
+    const GIF_MAX_DIM: u32 = 800;
+    const WEBP_MAX_DIM: u32 = 1280;
+
+    /// A frame as an `RgbaImage`, downscaled so its long side is at most `max_dim`.
+    fn downscaled(img: &CapturedImage, max_dim: u32) -> Result<image::RgbaImage> {
+        let buf = image::RgbaImage::from_raw(img.width, img.height, img.rgba.clone())
+            .ok_or_else(|| anyhow::anyhow!("image dimensions don't match the buffer"))?;
+        let long = img.width.max(img.height);
+        if long <= max_dim {
+            return Ok(buf);
+        }
+        let scale = max_dim as f32 / long as f32;
+        let nw = ((img.width as f32 * scale).round() as u32).max(1);
+        let nh = ((img.height as f32 * scale).round() as u32).max(1);
+        Ok(image::imageops::resize(
+            &buf,
+            nw,
+            nh,
+            image::imageops::FilterType::Triangle,
+        ))
+    }
+
+    /// Animated-GIF sink: each captured frame is quantized to 256 colours and appended
+    /// with a fixed 1/fps delay (so a timelapse plays back sped up, like the video path).
+    struct GifSink {
+        enc: image::codecs::gif::GifEncoder<std::io::BufWriter<std::fs::File>>,
+        delay: image::Delay,
+    }
+
+    impl GifSink {
+        fn new(path: &str, fps: u32) -> Result<Self> {
+            use image::codecs::gif::{GifEncoder, Repeat};
+            let file = std::fs::File::create(path).context("creating the GIF file")?;
+            // A fast quantizer: we encode every frame synchronously in the capture loop.
+            let mut enc = GifEncoder::new_with_speed(std::io::BufWriter::new(file), 30);
+            enc.set_repeat(Repeat::Infinite).context("GIF loop flag")?;
+            // GIF delays are centisecond-resolution; clamp to a browser-safe 2cs floor.
+            let ms = (1000.0 / fps as f64).round().max(20.0) as u32;
+            Ok(Self {
+                enc,
+                delay: image::Delay::from_numer_denom_ms(ms, 1),
+            })
+        }
+    }
+
+    impl FrameSink for GifSink {
+        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<()> {
+            let buf = downscaled(img, GIF_MAX_DIM)?;
+            self.enc
+                .encode_frame(image::Frame::from_parts(buf, 0, 0, self.delay))
+                .context("encoding a GIF frame")?;
+            Ok(())
+        }
+        // The GIF trailer is written when the encoder is dropped (after finish()).
+    }
+
+    /// Animated-WebP sink. libwebp's animation encoder borrows each frame's pixels until
+    /// the whole file is encoded, so we buffer frames and emit on finish().
+    struct WebpSink {
+        path: String,
+        fps: u32,
+        dims: Option<(u32, u32)>,
+        frames: Vec<Vec<u8>>,
+    }
+
+    impl WebpSink {
+        fn new(path: &str, fps: u32) -> Self {
+            Self {
+                path: path.to_string(),
+                fps,
+                dims: None,
+                frames: Vec::new(),
+            }
+        }
+    }
+
+    impl FrameSink for WebpSink {
+        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<()> {
+            let buf = downscaled(img, WEBP_MAX_DIM)?;
+            let dims = *self.dims.get_or_insert((buf.width(), buf.height()));
+            // Frames must share dimensions; the source is a fixed output/region/window.
+            if (buf.width(), buf.height()) == dims {
+                self.frames.push(buf.into_raw());
+            }
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<()> {
+            let Some((w, h)) = self.dims else {
+                return Ok(());
+            };
+            let mut config = webp::WebPConfig::new().map_err(|_| anyhow::anyhow!("WebP config"))?;
+            config.quality = 75.0;
+            let mut enc = webp::AnimEncoder::new(w, h, &config);
+            let step = (1000.0 / self.fps as f64).round() as i32;
+            for (i, rgba) in self.frames.iter().enumerate() {
+                enc.add_frame(webp::AnimFrame::from_rgba(rgba, w, h, i as i32 * step));
+            }
+            let data = enc
+                .try_encode()
+                .map_err(|e| anyhow::anyhow!("WebP encode: {e:?}"))?;
+            std::fs::write(&self.path, &*data).context("writing the WebP file")?;
+            Ok(())
+        }
+    }
+
+    /// Build the output sink from the file extension: `.gif`/`.webp` give animated images,
+    /// anything else an FFmpeg-muxed video. Returns the sink and a label for the log.
+    fn make_sink(args: &RecordArgs, mode: video::Mode) -> Result<(Box<dyn FrameSink>, String)> {
+        let ext = std::path::Path::new(&args.file)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let fps = args.fps.max(1);
+        match ext.as_str() {
+            "gif" => Ok((Box::new(GifSink::new(&args.file, fps)?), "GIF".into())),
+            "webp" => Ok((Box::new(WebpSink::new(&args.file, fps)), "WebP".into())),
+            _ => {
+                let enc = VideoEncoder::new(
+                    &args.file,
+                    video::Options {
+                        backend: args.encoder.into(),
+                        fps,
+                        mode,
+                        device: Some(args.device.clone().into()),
+                    },
+                )?;
+                let label = format!("{:?}", enc.resolved_backend()?);
+                Ok((Box::new(enc), label))
+            }
+        }
+    }
+
     #[derive(Args)]
     pub struct RecordArgs {
         /// Interactively select a region on a frozen overlay (drag, Esc to cancel).
@@ -333,7 +469,8 @@ mod record_impl {
         /// Stop automatically after this many seconds (otherwise: Ctrl-C).
         #[arg(short = 'd', long, value_name = "SECS")]
         duration: Option<f64>,
-        /// Destination file; the container is inferred from its extension (`.mp4`).
+        /// Destination file; the format is inferred from its extension. `.mp4`/`.mkv`
+        /// (H.264 video) or animated `.gif`/`.webp` (downscaled; best for a region).
         #[arg(value_name = "FILE")]
         file: String,
     }
@@ -500,21 +637,11 @@ mod record_impl {
         };
         let interval = args.timelapse.as_deref().map(parse_interval).transpose()?;
 
-        let mut sink = VideoEncoder::new(
-            &args.file,
-            video::Options {
-                backend: args.encoder.into(),
-                fps: args.fps.max(1),
-                mode,
-                device: Some(args.device.clone().into()),
-            },
-        )?;
-        let backend = sink.resolved_backend()?;
+        let (mut sink, fmt) = make_sink(&args, mode)?;
         eprintln!(
-            "wlr-shot: recording {} to {} ({:?}). Press Ctrl-C to stop.",
+            "wlr-shot: recording {} to {} ({fmt}). Press Ctrl-C to stop.",
             target.label(),
             args.file,
-            backend
         );
 
         // Ctrl-C flips the stop flag so we finalise the file cleanly.
@@ -605,7 +732,8 @@ mod record_impl {
             }
         }
 
-        sink.finish().context("finalising the video file")?;
+        sink.finish().context("finalising the output file")?;
+        drop(sink); // flush GIF/WebP trailers held until the encoder is dropped
         eprintln!(
             "\rwlr-shot: saved {} ({frames} frames, {:.1}s)        ",
             args.file,

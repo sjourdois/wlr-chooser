@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`wlr-shot record` animated GIF/WebP**: pick the format by extension — `out.gif` or
+  `out.webp` produce an animated image instead of H.264. Frames are downscaled (GIF to
+  800 px, WebP to 1280 px on the long side) since per-frame GIF quantization on a full
+  output is slow, so this is best on a region. WebP vendors libwebp (no system dependency).
+- **`wlr-draw` save**: press `w` (or `wlr-draw save [path]`) to write the annotated
+  screen — the output under the cursor — to a PNG in your Pictures directory; works on a
+  frozen frame too.
 - **`wlr-draw`**: a new tool — draw and annotate **live on screen**, a Wayland-native
   take on gromit-mpx. A transparent always-on-top `wlr-layer-shell` overlay per output
   you scribble on with **pen**, **rectangle**, **arrow**, **text** and a **mask** (solid

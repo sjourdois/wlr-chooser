@@ -59,8 +59,10 @@ resolution.
 
 ## Recording (`record`)
 
-Stream a source to an H.264 video file (the container follows the extension, e.g.
-`.mp4`/`.mkv`). The same source flags as `screenshot` apply — `-o`/sole output,
+Stream a source to a file whose **format follows the extension**: `.mp4`/`.mkv` for
+H.264 video, or **`.gif`/`.webp`** for an animated image (downscaled — GIF to 800 px,
+WebP to 1280 px on the long side — and best used on a **region**, since per-frame GIF
+quantization on a full 4K output is slow). The same source flags as `screenshot` apply — `-o`/sole output,
 `--current-output`, `-w ID`/`--pick-window`, `-a`, `-g`, and `-s` — except a region
 (`-g`/`-s`) records a **single** output for now (the one its top-left corner sits
 on). Recording a **window** (`-w`/`--pick-window`) follows it across workspaces and
@@ -70,6 +72,8 @@ even while occluded.
 wlr-shot record -o DP-4 out.mp4                 # an output, until Ctrl-C
 wlr-shot record --pick-window -d 30 clip.mp4    # a window, 30 seconds
 wlr-shot record -g "$(slurp)" region.mp4        # a region (single output)
+wlr-shot record -g "$(slurp)" --fps 15 demo.gif # a region as an animated GIF
+wlr-shot record -g "$(slurp)" demo.webp         # …or animated WebP (smaller)
 wlr-shot record -o DP-4 --timelapse 2s day.mp4  # a frame every 2s, played at --fps
 ```
 
