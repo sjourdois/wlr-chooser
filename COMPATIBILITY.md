@@ -30,25 +30,34 @@ screen capture through the desktop portal / PipeWire — out of scope here.
 
 ## Compositors
 
-Legend: ✅ works · ◐ partial · ❌ unsupported · ❓ unverified. "Runtime-verified"
-means actually run by the author; "protocol-verified" means the compositor's binary
-is confirmed to advertise the required protocols (but the suite wasn't run on it).
-Everything else is inferred — corrections and reports welcome.
+Any **wlroots-based** compositor that advertises the protocols above should work —
+**Sway**, **Hyprland**, **niri**, **river**, **Wayfire**, **cosmic-comp** and the like.
+Run `wlr-peek doctor` to check yours.
 
-| Compositor | Capture | Windows | Overlays | Clipboard | Focus IPC (`-a` / `--current-output`) | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Sway** ≥ 1.10 (wlroots ≥ 0.18) | ✅ | ✅ | ✅ | ✅ | ✅ `swaymsg` | **Runtime-verified** (the development compositor). |
-| **Hyprland** 0.55 | ✅ | ✅ | ✅ | ✅ | ◐ `hyprctl` | **Protocol-verified**: the Hyprland 0.55 binary advertises every required protocol. The `hyprctl` focus backend is unit-tested against hyprctl's JSON but **not yet run on a live Hyprland**. |
-| **niri** | ❓ | ❓ | ✅ | ❓ | ◐ `niri msg` — `--current-output` only | niri's IPC exposes no per-window global rectangle, so `-a` is unavailable; use `-g`/`--current-output`. Backend parsing unit-tested against the documented shape, otherwise **unverified**. |
-| **river** | ❓ | ❓ | ✅ | ✅ | ❌ no backend | Capture needs river on wlroots ≥ 0.18. No focus IPC backend: use `-s`/`-g`/`-o`. ❓ |
-| **Wayfire** | ❓ | ❓ | ✅ | ✅ | ❌ no backend | As river: depends on the wlroots version. ❓ |
-| **COSMIC** (`cosmic-comp`) | ❓ | ❓ | ✅ | ❓ | ❌ no backend | Smithay-based; `ext-image-copy-capture` support unverified. ❓ |
-| **Mutter** (GNOME) | ❌ | ❌ | ❌ | ❌ | ❌ | No `ext-image-copy-capture` / `wlr-layer-shell`; capture only via the portal. Out of scope. |
-| **KWin** (KDE Plasma) | ❌ | ❌ | ❌ | ❌ | ❌ | Same as Mutter. |
+Only **Sway** (≥ 1.10 / wlroots ≥ 0.18) is **runtime-verified** — it's the development
+compositor. The others are *expected* to work from their protocol support, but haven't
+been exercised end-to-end yet.
 
-Where the focus IPC is unsupported, only the focus-aware *sources* (`-a`,
-`--current-output`) are affected — every other source (`-s` interactive select, `-g`
-geometry, `-o NAME`, `-w ID`, `--pick-window`) works regardless.
+**Mutter** (GNOME) and **KWin** (KDE Plasma) are **out of scope**: they don't implement
+`ext-image-copy-capture-v1` (or `wlr-layer-shell`), offering screen capture only through
+the desktop portal / PipeWire, which this suite deliberately doesn't use.
+
+Two things vary by compositor:
+
+- **Focus-aware sources** — `-a` (active window) and `--current-output` need a
+  per-compositor IPC backend (see below). Backends ship for **Sway** (`swaymsg`),
+  **Hyprland** (`hyprctl`) and **niri** (`niri msg`). Without a backend, every *other*
+  source still works: `-s` interactive select, `-g` geometry, `-o NAME`, `-w ID`,
+  `--pick-window`. (niri exposes no per-window global rectangle, so its `-a` is
+  unavailable — use `-g` / `--current-output`.)
+- **Zero-copy GPU capture** (`linux-dmabuf`) is optional; the CPU `wl_shm` path is the
+  universal fallback.
+
+> [!NOTE]
+> **Help wanted.** If you run wlr-utils on Hyprland, niri, river, Wayfire, cosmic-comp or
+> any other wlroots compositor, please report how it goes — run `wlr-peek doctor` and
+> open an issue with the output. Validation reports (and focus backends for more
+> compositors) are very welcome.
 
 ## Adding a compositor
 

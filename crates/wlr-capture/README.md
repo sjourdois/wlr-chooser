@@ -5,8 +5,8 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 The shared engine behind the [wlr-utils](https://github.com/sjourdois/wlr-utils)
-tools ([`wlr-chooser`], [`wlr-pip`]). Two reusable bricks plus the overlay UI
-helpers they share:
+tools (`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`). The
+reusable bricks plus the overlay UI helpers they share:
 
 - **`wl`** — a native Wayland client that enumerates foreign toplevels and outputs
   (`ext-foreign-toplevel-list-v1`) and captures them at full resolution via
@@ -22,6 +22,16 @@ helpers they share:
   `zwlr_data_control_v1` (the protocol `wl-copy` uses).
 - **`sink`** — `FrameSink`, the common output seam for screenshot/record/timelapse;
   the default dma-buf path reads back through `GpuReadback`.
+- **`stream` / `diff`** — a shared capture-session driver (arm / poll / reopen /
+  give-up) and a frame-difference metric, shared by the mirror, recorder and monitor.
+- **`capture` / `focus`** *(features)* — resolve a source to a `CapturedImage`
+  (cropping + multi-output compositing), and compositor-IPC focus backends (Sway /
+  Hyprland / niri) for active-window / current-output sources.
+- **`overlay` / `mirror`** *(features)* — the frozen region/point/magnify selector and
+  the floating live-mirror (PiP) host.
+- **`video` / `audio`** *(features)* — FFmpeg encoding (H.264 NVENC/VAAPI/libx264, and
+  animated GIF/WebP) and native-PipeWire audio capture (with an optional Pulse/ALSA
+  fallback via libavdevice).
 - **`render`** *(toolkit)* — an egui → `egui_glow` rendering core on an EGL/GLES
   context bound to a `wl_surface`, reusing `gl`'s dma-buf import for live textures.
   Any windowing host binds a `Gpu` to its surface and drives one egui frame per
@@ -35,14 +45,18 @@ This is primarily an **internal library** for the wlr-utils binaries; the public
 API is not yet stabilised and may change between minor versions. It is published
 so the tools can depend on it from crates.io.
 
-Two features, both on by default:
-- **`gpu`** pulls in `gbm` for the zero-copy dma-buf *capture* path; disable it for
-  a pure-CPU (shm) build with no `libgbm` dependency. The `gl` dma-buf import +
-  readback is built either way (it needs no `gbm`).
-- **`toolkit`** is the egui/EGL overlay UI (`render` + `theme`/`i18n`/`icons`).
-  Disable it (`--no-default-features`) for a headless build that only captures and
-  reads back — dropping `egui`, `resvg`, `fontdb` and the i18n stack (a ~6× smaller
-  dependency tree).
+A lean always-on core (`wl`, `gl`, `clipboard`, `sink`, `stream`, `diff`) plus opt-in
+features. On by default: `gpu`, `toolkit`, `i18n`.
+
+- **`gpu`** — the zero-copy dma-buf *capture* path (pulls `gbm`); without it a pure-CPU
+  shm build (no `libgbm`). The `gl` dma-buf import + readback is built either way.
+- **`toolkit`** — the egui/EGL overlay UI (`render` + `theme`/`icons`); drop it
+  (`--no-default-features`) for a headless build that only captures and reads back —
+  no `egui`/`resvg`/`fontdb` (a ~6× smaller dependency tree).
+- **`i18n`** — Fluent localisation; without it `tr!` returns the English fallback.
+- Off by default: **`compose`** (source→image), **`focus`** (compositor IPC),
+  **`overlay`**, **`mirror`**, **`video`** (FFmpeg), **`audio`** (PipeWire;
+  **`audio-fallback`** adds Pulse/ALSA).
 
 ## License
 
