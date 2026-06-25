@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## Unreleased
 
+### Added
+
+- **`wlr-draw`** — the tray menu gained a **Start on login** toggle that writes / removes
+  an XDG autostart entry (`~/.config/autostart/wlr-draw.desktop`). The daemon also
+  auto-registers itself on its first ever run (tracked by a sentinel under
+  `$XDG_STATE_HOME`), so it starts with the session out of the box; unchecking it from the
+  tray is then permanent — a later manual launch won't bring it back.
+
+### Fixed
+
+- **`wlr-draw`** — the daemon never called `i18n::init()` (unlike every other binary), so
+  the tray menu and on-screen hints stayed English regardless of `$LANG`/`$LANGUAGE`. It
+  now negotiates the desktop locale at startup. The autostart entry also carries its state
+  as a `☑` / `☐` glyph in the label rather than a dbusmenu `toggle-type=checkmark`, which
+  several SNI hosts (e.g. waybar) don't render reliably.
+
 ## 1.3.0 — 2026-06-25
 
 ### Added

@@ -20,11 +20,14 @@ use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use wlr_capture::tr;
 
 /// The tray model. `active`/`color`/`tool` mirror the overlay; `tx` feeds menu actions.
+/// `autostart` mirrors whether the XDG autostart entry exists (toggled from the menu,
+/// independent of the daemon — see [`crate::autostart`]).
 pub struct DrawTray {
     tx: Sender<Cmd>,
     pub active: bool,
     pub color: Color,
     pub tool: Tool,
+    autostart: bool,
 }
 
 /// Side of the generated tray icon (px).
@@ -93,6 +96,28 @@ impl Tray for DrawTray {
                 ..Default::default()
             }
             .into(),
+            // A self-checked entry: the state lives in the label (☑ / ☐) rather than a
+            // dbusmenu `toggle-type=checkmark`, because several SNI hosts (notably waybar
+            // via libdbusmenu-gtk + a dark GTK theme) don't render the native check
+            // indicator reliably. A glyph in the text is renderer-independent.
+            StandardItem {
+                label: format!(
+                    "{}  {}",
+                    if self.autostart { "☑" } else { "☐" },
+                    tr!("tray-autostart")
+                ),
+                activate: Box::new(|t: &mut DrawTray| {
+                    let want = !t.autostart;
+                    // The toggle is a filesystem op (write / remove the desktop entry);
+                    // only flip the state if it actually took effect.
+                    match crate::autostart::set(want) {
+                        Ok(()) => t.autostart = want,
+                        Err(e) => eprintln!("wlr-draw: autostart toggle failed: {e}"),
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
             MenuItem::Separator,
             StandardItem {
                 label: tr!("tray-quit"),
@@ -126,11 +151,14 @@ fn shortcut_items() -> Vec<MenuItem<DrawTray>> {
 /// there is no D-Bus session bus (e.g. headless), so the daemon still runs.
 pub fn spawn(tx: Sender<Cmd>, color: Color, tool: Tool) -> Option<Handle<DrawTray>> {
     std::env::var_os("DBUS_SESSION_BUS_ADDRESS")?; // no session bus → no tray
+    // One-time auto-register on first ever run; harmless on later launches.
+    crate::autostart::ensure_initialized();
     DrawTray {
         tx,
         active: false,
         color,
         tool,
+        autostart: crate::autostart::is_enabled(),
     }
     .spawn()
     .ok()

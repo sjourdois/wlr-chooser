@@ -45,6 +45,7 @@ tray-clear = Cancella
 tray-undo = Annulla
 tray-shortcuts = Scorciatoie
 tray-quit = Esci
+tray-autostart = Avvia all'accesso
 draw-help-move = frecce: sposta selezione · Ctrl: passo maggiore
 draw-tool-move = Sposta
 draw-help-freeze = Spazio: congela lo schermo per annotare

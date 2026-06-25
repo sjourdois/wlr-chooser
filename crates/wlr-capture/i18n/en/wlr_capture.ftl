@@ -59,3 +59,4 @@ tray-clear = Clear
 tray-undo = Undo
 tray-shortcuts = Shortcuts
 tray-quit = Quit
+tray-autostart = Start on login

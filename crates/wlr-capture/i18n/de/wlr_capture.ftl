@@ -45,6 +45,7 @@ tray-clear = Löschen
 tray-undo = Rückgängig
 tray-shortcuts = Tastenkürzel
 tray-quit = Beenden
+tray-autostart = Beim Anmelden starten
 draw-help-move = Pfeile: Auswahl verschieben · Ctrl: größerer Schritt
 draw-tool-move = Verschieben
 draw-help-freeze = Leertaste: Bildschirm einfrieren zum Annotieren

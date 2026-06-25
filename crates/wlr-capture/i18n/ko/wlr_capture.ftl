@@ -45,6 +45,7 @@ tray-clear = 지우기
 tray-undo = 실행 취소
 tray-shortcuts = 단축키
 tray-quit = 종료
+tray-autostart = 로그인 시 시작
 draw-help-move = 화살표: 선택 이동 · Ctrl: 크게 이동
 draw-tool-move = 이동
 draw-help-freeze = Space: 화면을 정지하고 주석

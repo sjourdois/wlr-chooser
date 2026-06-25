@@ -134,8 +134,19 @@ For a non-systemd session, launch it from the compositor instead — sway: `exec
 With the `tray` feature (on by default) the daemon shows a StatusNotifierItem tray icon
 (e.g. in waybar's `tray` module): a hollow ring when idle, a filled disc in the current
 stroke colour while drawing. Left-click toggles draw mode; the menu offers toggle /
-clear / undo / quit and a **Shortcuts** submenu with the full key legend.
-`--no-default-features` drops it (and the D-Bus dependency).
+clear / undo / quit, a **Shortcuts** submenu with the full key legend, and a
+**Start on login** checkbox (see below). `--no-default-features` drops it (and the D-Bus
+dependency).
+
+### Start on login
+
+The tray's **Start on login** entry writes (or removes) an XDG autostart desktop entry at
+`~/.config/autostart/wlr-draw.desktop`, picked up by any XDG-compliant session — including
+the systemd xdg-autostart generator under uwsm. The daemon also registers itself there
+**once**, on its first ever run (tracked by a sentinel under `$XDG_STATE_HOME`), so it
+starts with the session out of the box. After that the checkbox is the sole source of
+truth: unchecking it is permanent, and a later manual launch won't re-create the entry.
+This is an alternative to the hand-written unit above — use one or the other, not both.
 
 ## Example sway bindings
 

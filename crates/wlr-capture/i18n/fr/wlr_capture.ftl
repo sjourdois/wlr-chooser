@@ -57,3 +57,4 @@ tray-clear = Effacer
 tray-undo = Annuler
 tray-shortcuts = Raccourcis
 tray-quit = Quitter
+tray-autostart = Lancer au démarrage

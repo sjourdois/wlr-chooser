@@ -45,6 +45,7 @@ tray-clear = Wyczyść
 tray-undo = Cofnij
 tray-shortcuts = Skróty
 tray-quit = Zakończ
+tray-autostart = Uruchamiaj przy logowaniu
 draw-help-move = strzałki: przesuń zaznaczenie · Ctrl: większy krok
 draw-tool-move = Przesuń
 draw-help-freeze = Spacja: zamroź ekran, aby dodać adnotacje

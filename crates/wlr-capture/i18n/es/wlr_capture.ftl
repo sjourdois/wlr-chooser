@@ -45,6 +45,7 @@ tray-clear = Borrar
 tray-undo = Deshacer
 tray-shortcuts = Atajos
 tray-quit = Salir
+tray-autostart = Iniciar al iniciar sesión
 draw-help-move = flechas: mover selección · Ctrl: paso mayor
 draw-tool-move = Mover
 draw-help-freeze = Espacio: congelar la pantalla para anotar

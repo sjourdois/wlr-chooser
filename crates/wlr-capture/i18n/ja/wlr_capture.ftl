@@ -45,6 +45,7 @@ tray-clear = 消去
 tray-undo = 元に戻す
 tray-shortcuts = ショートカット
 tray-quit = 終了
+tray-autostart = ログイン時に起動
 draw-help-move = 矢印: 選択を移動 · Ctrl: 大きく移動
 draw-tool-move = 移動
 draw-help-freeze = Space: 画面を静止して注釈

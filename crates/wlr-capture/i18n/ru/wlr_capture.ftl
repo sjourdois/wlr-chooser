@@ -45,6 +45,7 @@ tray-clear = Очистить
 tray-undo = Отменить
 tray-shortcuts = Горячие клавиши
 tray-quit = Выход
+tray-autostart = Запускать при входе
 draw-help-move = стрелки: переместить выделение · Ctrl: крупнее
 draw-tool-move = Переместить
 draw-help-freeze = Пробел: заморозить экран для аннотаций

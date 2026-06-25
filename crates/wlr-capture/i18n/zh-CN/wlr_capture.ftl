@@ -45,6 +45,7 @@ tray-clear = 清除
 tray-undo = 撤销
 tray-shortcuts = 快捷键
 tray-quit = 退出
+tray-autostart = 登录时启动
 draw-help-move = 方向键：移动所选 · Ctrl：大步移动
 draw-tool-move = 移动
 draw-help-freeze = 空格：冻结屏幕以标注

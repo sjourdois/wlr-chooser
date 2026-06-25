@@ -5,6 +5,8 @@
 //! the running daemon over a Unix socket ([`ipc`]) — `toggle`, `clear`, `tool arrow`,
 //! `color #00ff00`, … — so you bind them to compositor keys.
 
+#[cfg(feature = "tray")]
+mod autostart;
 mod ipc;
 mod model;
 mod overlay;
@@ -67,6 +69,10 @@ enum Ctl {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Negotiate the UI language from the desktop locale (no-op without the `i18n`
+    // feature). Like every other binary in the workspace — without it the tray menu and
+    // on-screen hints stay English regardless of `$LANG`.
+    wlr_capture::i18n::init();
     let cli = Cli::parse();
     match cli.cmd {
         None => overlay::run(),

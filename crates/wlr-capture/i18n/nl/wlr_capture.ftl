@@ -45,6 +45,7 @@ tray-clear = Wissen
 tray-undo = Ongedaan maken
 tray-shortcuts = Sneltoetsen
 tray-quit = Afsluiten
+tray-autostart = Starten bij aanmelden
 draw-help-move = pijlen: selectie verplaatsen · Ctrl: grotere stap
 draw-tool-move = Verplaatsen
 draw-help-freeze = Spatie: scherm bevriezen om te annoteren
