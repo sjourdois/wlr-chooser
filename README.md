@@ -48,11 +48,17 @@ with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
 
 ## Install
 
-Per-tool instructions live in each crate's README. In short:
+Each tool is its own crate — install the ones you want. Per-tool instructions
+live in each crate's README. In short:
 
 ```sh
-cargo install wlr-chooser        # the picker
-cargo install wlr-pip            # the PiP mirror
+cargo install wlr-chooser        # window/screen picker + wlr-switcher (Alt-Tab/exposé)
+cargo install wlr-peek           # colour picker, loupe, OCR, live mirror, watch
+cargo install wlr-shot           # screenshots + recording
+cargo install wlr-draw           # annotation overlay
+
+# …or all at once:
+cargo install wlr-chooser wlr-peek wlr-shot wlr-draw
 ```
 
 Prebuilt binaries, installer scripts and `.deb` packages are attached to every
@@ -67,8 +73,10 @@ cargo build --release            # builds all binaries
 
 - **[wlr-chooser README](crates/wlr-chooser/README.md)** — portal setup, options,
   the `wlr-switcher` Alt-Tab/exposé, theming and localisation.
-- **[wlr-pip README](crates/wlr-pip/README.md)** — usage, Sway rules, controls and
-  keyboard shortcuts.
+- **[wlr-peek README](crates/wlr-peek/README.md)** — colour picker, loupe, OCR, live
+  mirror, change monitor and visual grep.
+- **[wlr-shot README](crates/wlr-shot/README.md)** — screenshots, recording and
+  timelapse, with system audio and hardware encoding.
 - **[wlr-draw README](crates/wlr-draw/README.md)** — the annotation overlay: daemon,
   control socket, tools and example key bindings.
 - **[wlr-capture README](crates/wlr-capture/README.md)** — the shared engine.
