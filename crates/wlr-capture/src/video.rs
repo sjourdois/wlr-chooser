@@ -74,9 +74,11 @@ pub enum Mode {
 /// Encoder configuration. Dimensions are learned from the first frame.
 #[derive(Clone, Debug)]
 pub struct Options {
+    /// The encoder backend to use (NVENC / VAAPI / software / auto).
     pub backend: Backend,
     /// Output frame rate (the playback rate; also the rate-control hint).
     pub fps: u32,
+    /// Real-time recording vs. timelapse.
     pub mode: Mode,
     /// DRM render node for the VAAPI backend (ignored otherwise).
     pub device: Option<PathBuf>,

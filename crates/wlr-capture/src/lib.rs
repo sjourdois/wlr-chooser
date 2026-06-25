@@ -37,6 +37,12 @@
 //! and reuse this engine for the heavy lifting; a future headless recorder can use
 //! the capture engine + readback without pulling in the toolkit.
 
+// `doc_cfg` renders the "Available on crate feature X" badges on docs.rs (nightly-only,
+// so guarded by the `docsrs` cfg that docs.rs sets via rustdoc-args).
+#![cfg_attr(docsrs, feature(doc_cfg))]
+// Keep the public API fully documented (the whole surface ships on docs.rs).
+#![warn(missing_docs)]
+
 // Re-exported so consumers can own a single `Connection` and pass it to several
 // overlays in one process (e.g. the region selector then a live mirror), sharing one
 // `EGLDisplay` instead of opening a second one. See `overlay::select_region_on`.
@@ -51,26 +57,35 @@ pub mod stream;
 pub mod wl;
 
 #[cfg(feature = "compose")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compose")))]
 pub mod capture;
 
 #[cfg(feature = "focus")]
+#[cfg_attr(docsrs, doc(cfg(feature = "focus")))]
 pub mod focus;
 
 #[cfg(feature = "overlay")]
+#[cfg_attr(docsrs, doc(cfg(feature = "overlay")))]
 pub mod overlay;
 
 #[cfg(feature = "mirror")]
+#[cfg_attr(docsrs, doc(cfg(feature = "mirror")))]
 pub mod mirror;
 
 #[cfg(feature = "video")]
+#[cfg_attr(docsrs, doc(cfg(feature = "video")))]
 pub mod video;
 
 #[cfg(feature = "audio")]
+#[cfg_attr(docsrs, doc(cfg(feature = "audio")))]
 pub mod audio;
 
 #[cfg(feature = "toolkit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toolkit")))]
 pub mod icons;
 #[cfg(feature = "toolkit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toolkit")))]
 pub mod render;
 #[cfg(feature = "toolkit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "toolkit")))]
 pub mod theme;

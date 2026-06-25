@@ -66,9 +66,13 @@ use wayland_protocols::xdg::xdg_output::zv1::client::{
 /// A capturable window.
 #[derive(Clone)]
 pub struct Toplevel {
+    /// The protocol handle used to capture or act on this window.
     pub handle: ExtForeignToplevelHandleV1,
+    /// Compositor-assigned stable identifier for the toplevel.
     pub identifier: String,
+    /// The window title.
     pub title: String,
+    /// The application id (used to match an icon / desktop entry).
     pub app_id: String,
 }
 
@@ -81,16 +85,21 @@ pub struct Toplevel {
 /// logical size from those.
 #[derive(Clone)]
 pub struct Output {
+    /// The underlying `wl_output` protocol object.
     pub wl_output: WlOutput,
+    /// The output's connector name (e.g. `DP-1`).
     pub name: String,
-    /// Top-left position in the global logical coordinate space.
+    /// Left edge in the global logical coordinate space.
     pub logical_x: i32,
+    /// Top edge in the global logical coordinate space.
     pub logical_y: i32,
-    /// Logical size from xdg-output (0 until received; see [`Output::logical_size`]).
+    /// Logical width from xdg-output (0 until received; see [`Output::logical_size`]).
     pub logical_w: i32,
+    /// Logical height from xdg-output (0 until received; see [`Output::logical_size`]).
     pub logical_h: i32,
-    /// Resolution of the current mode, in physical pixels (pre-transform).
+    /// Width of the current mode, in physical pixels (pre-transform).
     pub phys_width: i32,
+    /// Height of the current mode, in physical pixels (pre-transform).
     pub phys_height: i32,
     /// Integer buffer scale (wl_output; may be coarser than the real scale).
     pub scale: i32,
@@ -139,13 +148,18 @@ impl Output {
 /// be negative; `w`/`h` are unsigned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Region {
+    /// Left edge (may be negative in logical space).
     pub x: i32,
+    /// Top edge (may be negative in logical space).
     pub y: i32,
+    /// Width.
     pub w: u32,
+    /// Height.
     pub h: u32,
 }
 
 impl Region {
+    /// Whether the region has zero area (`w` or `h` is 0).
     pub fn is_empty(&self) -> bool {
         self.w == 0 || self.h == 0
     }
@@ -180,8 +194,11 @@ impl Output {
 
 /// Decoded RGBA8 image.
 pub struct CapturedImage {
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
+    /// Tightly-packed RGBA8 pixels, row-major (`width * height * 4` bytes).
     pub rgba: Vec<u8>,
 }
 
@@ -451,7 +468,9 @@ impl Drop for DmaBuf {
 /// A captured frame handed to the UI: either CPU pixels (shm) or a dma-buf
 /// descriptor to import as a GL texture (GPU, zero-copy).
 pub enum Frame {
+    /// CPU pixels read back into shared memory (the shm fallback path).
     Shm(CapturedImage),
+    /// A dma-buf descriptor to import as a GL texture (zero-copy GPU path).
     // Constructed only with the `gpu` feature; the display side (EGL import) is
     // always built since it needs no gbm.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
@@ -462,12 +481,19 @@ pub enum Frame {
 /// the receiver; `buf_id` identifies the swapchain slot so the importer can cache
 /// one GL texture per slot (their backing memory is stable).
 pub struct DmabufFrame {
+    /// Owned file descriptor backing the buffer (closed when this is dropped).
     pub fd: OwnedFd,
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
+    /// DRM `FourCC` pixel format code.
     pub fourcc: u32,
+    /// DRM format modifier (tiling/compression layout).
     pub modifier: u64,
+    /// Row stride in bytes.
     pub stride: u32,
+    /// Byte offset of the plane within the buffer.
     pub offset: u32,
 }
 
@@ -508,6 +534,8 @@ struct State {
     sessions: HashMap<ObjectId, SessionData>,
 }
 
+/// A Wayland client that enumerates capturable toplevels and outputs and drives
+/// their capture sessions over `ext-image-copy-capture`.
 pub struct Client {
     queue: EventQueue<State>,
     qh: QueueHandle<State>,
@@ -586,9 +614,11 @@ impl Client {
         })
     }
 
+    /// The currently known capturable windows.
     pub fn toplevels(&self) -> &[Toplevel] {
         &self.state.toplevels
     }
+    /// The currently known capturable outputs.
     pub fn outputs(&self) -> &[Output] {
         &self.state.outputs
     }

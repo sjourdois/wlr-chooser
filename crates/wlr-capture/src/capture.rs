@@ -67,7 +67,9 @@ pub fn capture_window(client: &mut Client, id: &str, budget: Duration) -> Result
 
 /// A captured output paired with its geometry, for compositing a region.
 pub struct OutputCapture {
+    /// The output, including its placement in the global logical space.
     pub output: Output,
+    /// The captured pixels of that output.
     pub image: CapturedImage,
 }
 

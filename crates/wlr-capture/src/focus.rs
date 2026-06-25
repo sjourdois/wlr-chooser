@@ -11,8 +11,11 @@ use crate::wl::Region;
 /// A window's identity + content geometry, for binding a region mirror to the window
 /// under it (`app_id` + `title` match a `wl::Toplevel`; `rect` is its content area).
 pub struct WindowRef {
+    /// The window's application id (matches a [`wl::Toplevel`](crate::wl::Toplevel)).
     pub app_id: String,
+    /// The window title (matches a [`wl::Toplevel`](crate::wl::Toplevel)).
     pub title: String,
+    /// The window's content area in the global logical space.
     pub rect: Region,
 }
 

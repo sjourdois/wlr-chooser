@@ -346,8 +346,9 @@ pub enum Source {
         /// within that output's frame (scale-independent, so it survives any
         /// physical resolution the frames arrive at).
         crop: [f32; 4],
-        /// Logical region size; fixes the window aspect ratio.
+        /// Logical region width; fixes the window aspect ratio.
         region_w: u32,
+        /// Logical region height; fixes the window aspect ratio.
         region_h: u32,
         /// Magnification factor (initial window size = region × zoom).
         zoom: f32,
@@ -359,8 +360,9 @@ pub enum Source {
         id: String,
         /// Normalized sub-rectangle of the region within the window's content.
         crop: [f32; 4],
-        /// Logical region size; fixes the window aspect ratio.
+        /// Logical region width; fixes the window aspect ratio.
         region_w: u32,
+        /// Logical region height; fixes the window aspect ratio.
         region_h: u32,
         /// Magnification factor (initial window size = region × zoom).
         zoom: f32,
@@ -972,9 +974,19 @@ delegate_registry!(State);
 /// A captured frame (or the source's demise) for the single mirrored window.
 pub enum PipMsg {
     /// CPU shm frame at full resolution (RGBA8).
-    Shm { w: usize, h: usize, rgba: Vec<u8> },
+    Shm {
+        /// Width in pixels.
+        w: usize,
+        /// Height in pixels.
+        h: usize,
+        /// Tightly-packed RGBA8 pixels, row-major.
+        rgba: Vec<u8>,
+    },
     /// GPU dma-buf frame to import zero-copy as a GL texture (host-side).
-    Dmabuf { frame: wl::DmabufFrame },
+    Dmabuf {
+        /// The dma-buf descriptor to import.
+        frame: wl::DmabufFrame,
+    },
     /// The source window is gone (closed, or never appeared): the mirror ends.
     Gone,
 }

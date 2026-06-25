@@ -20,25 +20,43 @@
 use egui::Color32;
 use serde::Deserialize;
 
+/// Colours and fonts for the overlay UI, with generic-dark defaults (see [`Default`])
+/// overridable from `theme.toml`.
 #[derive(Clone)]
 pub struct Theme {
-    pub backdrop: Color32,      // dimmed overlay behind the card (lock mode)
-    pub bg: Color32,            // window background (no-lock)
-    pub card: Color32,          // the centred card
-    pub tile: Color32,          // tile background
-    pub tile_hover: Color32,    // tile background, hovered
-    pub tile_selected: Color32, // tile background, selected
-    pub thumb: Color32,         // thumbnail letterbox area
-    pub text: Color32,          // labels
-    pub text_dim: Color32,      // placeholders, secondary
-    pub accent: Color32,        // general accent (selection, focus)
-    pub screen_accent: Color32, // outline + glyph for OUTPUT tiles
-    pub window_accent: Color32, // outline for WINDOW tiles
+    /// Dimmed overlay drawn behind the card (lock mode).
+    pub backdrop: Color32,
+    /// Window background (no-lock mode).
+    pub bg: Color32,
+    /// The centred card.
+    pub card: Color32,
+    /// Tile background.
+    pub tile: Color32,
+    /// Tile background when hovered.
+    pub tile_hover: Color32,
+    /// Tile background when selected.
+    pub tile_selected: Color32,
+    /// Thumbnail letterbox area.
+    pub thumb: Color32,
+    /// Labels.
+    pub text: Color32,
+    /// Placeholders and secondary text.
+    pub text_dim: Color32,
+    /// General accent (selection, focus).
+    pub accent: Color32,
+    /// Outline and glyph for OUTPUT tiles.
+    pub screen_accent: Color32,
+    /// Outline for WINDOW tiles.
+    pub window_accent: Color32,
 
-    pub font: Option<String>, // UI font family (resolved via fontconfig)
-    pub font_path: Option<String>, // …or a direct font file
-    pub cjk_font: Option<String>, // CJK fallback family (else auto-detected)
-    pub font_size: Option<f32>, // base UI text size in points
+    /// UI font family (resolved via fontconfig).
+    pub font: Option<String>,
+    /// …or a direct font file.
+    pub font_path: Option<String>,
+    /// CJK fallback family (else auto-detected).
+    pub cjk_font: Option<String>,
+    /// Base UI text size in points.
+    pub font_size: Option<f32>,
 }
 
 impl Default for Theme {

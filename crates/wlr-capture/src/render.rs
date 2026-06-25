@@ -22,6 +22,9 @@ use wayland_client::{Connection, Proxy, protocol::wl_surface::WlSurface};
 /// context, so it (not a toolkit-agnostic UI) turns a dma-buf into a drawable
 /// egui texture. Returns the texture id + source pixel size.
 pub trait DmabufImporter {
+    /// Import `frame` as a GL-backed egui texture, caching it under `key` (the
+    /// swapchain slot). Returns the texture id and the source pixel size, or `None`
+    /// if the import fails.
     fn import(
         &mut self,
         key: &str,

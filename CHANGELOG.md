@@ -28,6 +28,12 @@ All notable changes to this project are documented here. The format is based on
   API-compatible, actively maintained `edgefirst-egl` fork, which lets the EGL bindings
   track **`libloading` 0.9**. Refreshed the rest of the dependency tree (`image` 0.25.10,
   `resvg` 0.47, …) and dropped the pinned `rust-version` from the workspace manifest.
+- **`wlr-capture`** — docs.rs now documents the full public API. It built with default
+  features only, so the feature-gated modules (`capture`/`focus`/`overlay`/`mirror`/
+  `video`) were missing; a `[package.metadata.docs.rs]` block enables them (with
+  `doc(cfg)` feature badges). Documented every remaining public item (100 % coverage,
+  enforced by `#![warn(missing_docs)]`). `audio` stays off on docs.rs — its `pipewire`
+  dep fails to build there.
 
 ## 1.3.0 — 2026-06-25
 

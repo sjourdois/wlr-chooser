@@ -13,6 +13,14 @@ readme = "README.md"
 name = "wlr_capture"
 path = "src/lib.rs"
 
+# docs.rs builds with default features only and can't apt-install system libraries, so
+# the feature-gated modules (capture/focus/overlay/mirror/video) were absent from the
+# published docs. Enable them explicitly. `audio`/`audio-fallback` stay off: their
+# `pipewire` dep fails to build on docs.rs (whereas `video`'s ffmpeg-next builds fine).
+[package.metadata.docs.rs]
+features = ["gpu", "toolkit", "i18n", "compose", "focus", "overlay", "mirror", "video"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 # --- Always-on core: capture engine, clipboard, dma-buf import + readback, sink.
 # No egui/SVG/font deps, so headless builds (a future recorder) stay lean.
