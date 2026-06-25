@@ -1,0 +1,28 @@
+# Standalone dev tool — NOT part of the wlr-utils workspace (own [workspace]
+# table below makes it self-contained, so it never affects the published crates).
+# A tiny virtual-pointer + virtual-keyboard injector used by the screenshot
+# generator to drive the interactive overlays inside the headless nested sway
+# (which has no real input devices, hence no pointer/keyboard until we create
+# virtual ones). The keyboard can HOLD keys (e.g. Shift for wlr-draw's spotlight),
+# which wtype cannot.
+[package]
+name = "shots-pointer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "shots-pointer"
+path = "main.rs"
+
+[dependencies]
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+xkbcommon = "0.9"
+tempfile = "3"
+
+[workspace]
+
+[profile.release]
+opt-level = 1

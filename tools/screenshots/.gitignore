@@ -1,0 +1,8 @@
+.sway.log
+.probe*
+.*.out
+.*.png
+.*.log
+.seqframes/
+pointer/target/
+vendor/
