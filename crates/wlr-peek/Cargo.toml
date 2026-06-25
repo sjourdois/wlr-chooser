@@ -3,7 +3,6 @@ name = "wlr-peek"
 description = "Inspect the screen on wlroots: colour picker, loupe, OCR, live mirror, change monitor, visual grep"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

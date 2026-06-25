@@ -3,7 +3,6 @@ name = "wlr-shot"
 description = "Screen capture for wlroots: screenshots, recording and timelapse (H.264, NVENC/VAAPI)"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

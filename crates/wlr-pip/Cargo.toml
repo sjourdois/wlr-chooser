@@ -3,7 +3,6 @@ name = "wlr-pip"
 description = "(deprecated) merged into wlr-peek — use 'wlr-peek mirror'"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

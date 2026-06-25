@@ -8,11 +8,11 @@
 //! headless builds (record/timelapse) that need readback but no UI.
 //!
 //! Extension function pointers are loaded at runtime via `eglGetProcAddress`
-//! (khronos-egl has no typed bindings for these).
+//! (edgefirst-egl has no typed bindings for these).
 
 use crate::wl;
 use anyhow::{Context as _, Result, anyhow, bail};
-use khronos_egl as egl;
+use edgefirst_egl as egl;
 use std::ffi::c_void;
 use std::os::fd::AsRawFd;
 use std::sync::Arc;

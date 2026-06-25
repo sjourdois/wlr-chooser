@@ -22,6 +22,13 @@ All notable changes to this project are documented here. The format is based on
   as a `☑` / `☐` glyph in the label rather than a dbusmenu `toggle-type=checkmark`, which
   several SNI hosts (e.g. waybar) don't render reliably.
 
+### Changed
+
+- Replaced the unmaintained `khronos-egl` (last released ~5 years ago) with the
+  API-compatible, actively maintained `edgefirst-egl` fork, which lets the EGL bindings
+  track **`libloading` 0.9**. Refreshed the rest of the dependency tree (`image` 0.25.10,
+  `resvg` 0.47, …) and dropped the pinned `rust-version` from the workspace manifest.
+
 ## 1.3.0 — 2026-06-25
 
 ### Added

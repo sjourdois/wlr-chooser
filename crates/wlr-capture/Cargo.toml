@@ -3,7 +3,6 @@ name = "wlr-capture"
 description = "Reusable wlroots capture engine + shared UI toolkit for the wlr-utils tools."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -19,7 +18,7 @@ path = "src/lib.rs"
 # No egui/SVG/font deps, so headless builds (a future recorder) stay lean.
 anyhow.workspace = true
 glow.workspace = true
-khronos-egl.workspace = true
+edgefirst-egl.workspace = true
 libloading.workspace = true
 # `system` exposes `Backend::display_ptr` (the wl_display ptr EGL needs in `gl`).
 # The toolkit build gets it transitively via wayland-egl; enable it directly so the

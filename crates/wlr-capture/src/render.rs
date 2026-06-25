@@ -12,7 +12,7 @@ use crate::gl::{
     load_dmabuf_egl,
 };
 use crate::wl;
-use khronos_egl as egl;
+use edgefirst_egl as egl;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::Arc;
