@@ -4,14 +4,25 @@ members = [
     "crates/wlr-chooser",
     "crates/wlr-draw",
     "crates/wlr-peek",
-    "crates/wlr-pip",
+    "crates/wlr-shot",
+    "crates/wlr-utils",
+]
+# The `wlr-utils` bundle re-declares every tool's binary (so `cargo install wlr-utils`
+# gets them all). Keeping it out of the default set stops a plain `cargo build` from
+# producing two binaries of the same name (the bundle's and the individual crate's);
+# build the bundle explicitly with `-p wlr-utils`.
+default-members = [
+    "crates/wlr-capture",
+    "crates/wlr-chooser",
+    "crates/wlr-draw",
+    "crates/wlr-peek",
     "crates/wlr-shot",
 ]
 resolver = "3"
 
 # Shared package metadata for every crate in the wlr-utils workspace.
 [workspace.package]
-version = "1.3.1"
+version = "1.3.2"
 edition = "2024"
 authors = ["Stéphane Jourdois <stephane@jourdois.fr>"]
 license = "MIT OR Apache-2.0"

@@ -162,6 +162,51 @@ Sources: `-g`, `-o`, `-a`, `--current-output`, or (default) an interactive regio
 Matching is a substring (`-i` for case-insensitive); coordinates map back to a single
 output. Exits 1 when nothing matches, like `grep`.
 
+## Requirements
+
+A wlroots compositor exposing `ext-image-copy-capture-v1` with the output **and**
+foreign-toplevel capture sources — **Sway ≥ 1.12 / wlroots ≥ 0.20** (the floor for the
+window source; the tools open it even for screen captures). The frozen overlays (`color`,
+`loupe`, `region`) use `zwlr-layer-shell`, `mirror` uses `xdg-shell`, and `color
+--clipboard` needs `zwlr_data_control_manager_v1`. `wlr-peek doctor` prints exactly what
+your compositor advertises.
+
+- **GL stack** — `libegl1` at runtime (the overlays render through EGL/GLES). Capture is
+  CPU shm, so **no `libgbm`** is needed (the `gpu` feature is off by default).
+- **OCR** (`ocr`, `grep`; on by default) — links the system `libtesseract`/`libleptonica`
+  (`-dev` packages, plus `clang` for the bindings); the matching `tesseract-ocr-<lang>`
+  data pack must be installed at runtime (default `eng`). `--no-default-features` builds an
+  OCR-free binary with none of these.
+- **Focus IPC** — `--active-window` / `--current-output` query the compositor (e.g.
+  `swaymsg` on Sway); without a supported compositor, use an explicit source instead.
+
+## Install
+
+> **Want the whole suite?** Install the bundle instead — `cargo install wlr-utils` gets
+> every tool (`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`) in one
+> go. The single-tool install below is the lighter, à-la-carte option.
+
+```sh
+cargo install wlr-peek
+```
+
+Or build just this binary from the [wlr-utils](../../README.md) workspace:
+
+```sh
+cargo build --release -p wlr-peek
+```
+
+`--no-default-features` drops OCR (and Fluent) for a lighter binary with no native OCR
+dependencies — see **Requirements** above for what each feature pulls in.
+
+## Uninstall
+
+```sh
+cargo uninstall wlr-peek          # crates.io install; or: rm -f ~/.local/bin/wlr-peek
+```
+
+wlr-peek writes no config or state files, so removing the binary is all it takes.
+
 ## License
 
 MIT OR Apache-2.0.

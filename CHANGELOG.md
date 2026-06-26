@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.3.2 — 2026-06-26
+
+### Added
+
+- **`wlr-utils`** — a new bundle crate that installs the whole suite at once:
+  `cargo install wlr-utils` provides `wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`
+  and `wlr-draw`. The prebuilt release now ships a **single archive** with every binary
+  plus a one-line `wlr-utils-installer.sh`, and a **single `wlr-utils` `.deb`** (it
+  `Replaces`/`Conflicts` the old per-tool packages), instead of one download per tool. Each
+  tool stays its own crate for lighter, à-la-carte installs.
+
+### Removed
+
+- **`wlr-pip`** — the deprecated stub (superseded by `wlr-peek mirror`) is no longer built
+  or published.
+
+### Fixed
+
+- **`wlr-peek doctor`** — on a screen-capture-only compositor (Sway 1.11 / wlroots 0.19)
+  the report no longer claims a bare "screen capture: supported"; it now notes the tools
+  also open the window source at start-up, so the effective floor stays Sway 1.12 /
+  wlroots 0.20.
+- **Docs** — aligned the **Install / Uninstall / Requirements** sections across every
+  README (per-tool system dependencies, the unified bundle, and removing `wlr-draw`'s
+  autostart entry).
+
 ## 1.3.1 — 2026-06-26
 
 ### Added

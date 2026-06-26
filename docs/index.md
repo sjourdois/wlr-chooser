@@ -113,11 +113,18 @@ wlr-peek watch -o DP-1 --on change      # fire when a region changes
 
 ## Install
 
-All tools are published on [crates.io](https://crates.io/crates/wlr-capture):
+All five tools in one go — the `wlr-utils` bundle:
 
 ```sh
-cargo install wlr-chooser wlr-shot wlr-peek wlr-draw
+cargo install wlr-utils
 ```
+
+…or grab the [prebuilt bundle](https://github.com/sjourdois/wlr-utils/releases/latest)
+(one archive + a one-line `wlr-utils-installer.sh`). Prefer a single tool? Install it on
+its own — `cargo install wlr-shot` (also `wlr-chooser`, `wlr-peek`, `wlr-draw`). Uninstall
+with `cargo uninstall <name>`; see the
+[main README](https://github.com/sjourdois/wlr-utils#uninstall) for the leftover files
+`wlr-draw` writes (its autostart entry).
 
 They run on wlroots compositors that implement `ext-image-copy-capture-v1`
 (**sway**, **Hyprland**, **niri**, …). See the

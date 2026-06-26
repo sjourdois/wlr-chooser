@@ -24,13 +24,10 @@ jobs:
             libpipewire-0.3-dev libtesseract-dev libleptonica-dev libdbus-1-dev
       - name: Install cargo-deb
         run: cargo install cargo-deb
-      - name: Build .deb packages
-        run: |
-          cargo deb -p wlr-chooser
-          cargo deb -p wlr-pip
-          cargo deb -p wlr-shot
-          cargo deb -p wlr-peek
-          cargo deb -p wlr-draw
+      - name: Build the .deb package
+        # One bundle package shipping every binary (supersedes the old per-tool packages
+        # via conflicts/replaces). `cargo deb` builds the bundle's binaries first.
+        run: cargo deb -p wlr-utils
       - name: Attach to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

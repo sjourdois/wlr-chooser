@@ -28,8 +28,9 @@ whether screen capture and focus-aware sources will work.
 protocol plus the **output** source arrived in **wlroots 0.19** (Sway ≥ 1.11), but the
 **foreign-toplevel** source (`ext_foreign_toplevel_image_capture_source_manager_v1`) —
 which window capture depends on — only arrived in **wlroots 0.20** (Sway ≥ 1.12). Since
-every tool here captures windows, the effective floor is **wlroots 0.20 / Sway ≥ 1.12**.
-On Sway 1.11 you get screen capture but `wlr-chooser` aborts with
+every tool here opens the window source at start-up (even for a screen capture), the
+effective floor is **wlroots 0.20 / Sway ≥ 1.12**. A Sway 1.11 compositor advertises
+screen capture, but the tools still abort with
 `ext_foreign_toplevel_image_capture_source_manager_v1 missing`. None of this is
 implemented by GNOME's Mutter or KDE's KWin, which only offer screen capture through the
 desktop portal / PipeWire — out of scope here.

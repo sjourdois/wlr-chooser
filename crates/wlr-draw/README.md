@@ -31,7 +31,7 @@ freeze-frame, which grabs a still backdrop to annotate.
 
 A wlroots layer-shell client **cannot grab a global hotkey**, so — like gromit-mpx —
 `wlr-draw` runs as a daemon and further invocations drive it over a per-user control
-socket. You bind those invocations to compositor keys.
+socket — driven from a compositor key bind, the tray icon, or a script.
 
 ```sh
 wlr-draw                 # start the daemon (the overlay; runs in the foreground)
@@ -43,6 +43,7 @@ wlr-draw visibility      # hide/show the annotations without discarding them
 wlr-draw tool  <pen|rect|mask|arrow|text|eraser>   # mask = solid box to redact areas
 wlr-draw color <name|#rrggbb[aa]>     # red green blue yellow orange cyan magenta white black
 wlr-draw width <px>
+wlr-draw save [path]     # write the annotated screen to a PNG (Pictures dir by default)
 wlr-draw quit            # stop the daemon
 ```
 
@@ -125,12 +126,33 @@ grey when idle).
 
 ## Running the daemon
 
-### systemd `--user` (recommended)
+### Start on login (default)
 
-The daemon is a session service. A unit is provided in
-[`contrib/wlr-draw.service`](contrib/wlr-draw.service) (bound to
-`graphical-session.target`, so it starts/stops with the Wayland session — works with
-uwsm, which imports `WAYLAND_DISPLAY` into the user manager):
+With the `tray` feature (on by default) **nothing needs installing**: on its very first
+run the daemon registers an XDG autostart entry at `~/.config/autostart/wlr-draw.desktop`
+(tracked by a sentinel under `$XDG_STATE_HOME`), so it comes up with the session out of
+the box — picked up by any XDG-compliant session, including the systemd xdg-autostart
+generator under uwsm.
+
+After that first run the desktop file's presence is the sole source of truth: the tray's
+**Start on login** checkbox writes or removes it, and unchecking it is permanent — a later
+manual launch won't recreate an entry you deliberately dropped.
+
+### Tray icon
+
+With the `tray` feature (on by default) the daemon shows a StatusNotifierItem tray icon
+(e.g. in waybar's `tray` module): a hollow ring when idle, a filled disc in the current
+stroke colour while drawing. Left-click toggles draw mode; the menu offers toggle /
+clear / undo / quit, a **Shortcuts** submenu with the full key legend, and the **Start on
+login** checkbox above. `--no-default-features` drops it (and the D-Bus dependency).
+
+### Without the tray: systemd or the compositor
+
+A `--no-default-features` build has no tray and so no self-registering autostart — start
+the daemon yourself. Either drop in the provided systemd `--user` unit
+([`contrib/wlr-draw.service`](contrib/wlr-draw.service), bound to
+`graphical-session.target` so it tracks the Wayland session — works with uwsm, which
+imports `WAYLAND_DISPLAY` into the user manager):
 
 ```sh
 install -Dm644 contrib/wlr-draw.service ~/.config/systemd/user/wlr-draw.service
@@ -140,33 +162,17 @@ install -Dm644 contrib/wlr-draw.service ~/.config/systemd/user/wlr-draw.service
 systemctl --user enable --now wlr-draw.service
 ```
 
-### Or from the compositor
-
-For a non-systemd session, launch it from the compositor instead — sway: `exec wlr-draw`.
-
-### Tray icon
-
-With the `tray` feature (on by default) the daemon shows a StatusNotifierItem tray icon
-(e.g. in waybar's `tray` module): a hollow ring when idle, a filled disc in the current
-stroke colour while drawing. Left-click toggles draw mode; the menu offers toggle /
-clear / undo / quit, a **Shortcuts** submenu with the full key legend, and a
-**Start on login** checkbox (see below). `--no-default-features` drops it (and the D-Bus
-dependency).
-
-### Start on login
-
-The tray's **Start on login** entry writes (or removes) an XDG autostart desktop entry at
-`~/.config/autostart/wlr-draw.desktop`, picked up by any XDG-compliant session — including
-the systemd xdg-autostart generator under uwsm. The daemon also registers itself there
-**once**, on its first ever run (tracked by a sentinel under `$XDG_STATE_HOME`), so it
-starts with the session out of the box. After that the checkbox is the sole source of
-truth: unchecking it is permanent, and a later manual launch won't re-create the entry.
-This is an alternative to the hand-written unit above — use one or the other, not both.
+…or launch it straight from the compositor — sway: `exec wlr-draw`. Use one mechanism, not
+several.
 
 ## Example sway bindings
 
-Bind the toggle (everything else is a key shortcut while drawing, so one bind is enough
-— add more if you like driving it from outside draw mode):
+**The only binding you need is `wlr-draw toggle`.** Once draw mode is on, the overlay holds
+keyboard focus, so every other tool is a bare key shortcut while drawing (see the table
+above) — no extra compositor binds required. And if you have the tray, **left-clicking its
+icon toggles draw mode too**, so even that one binding is optional.
+
+The bindings below are just conveniences for driving the daemon from *outside* draw mode:
 
 ```
 bindsym $mod+d       exec wlr-draw toggle
@@ -178,15 +184,48 @@ The protocol is plain text, one command per line on the socket
 (`$XDG_RUNTIME_DIR/wlr-draw.sock`), so you can also drive it from scripts:
 `echo 'tool arrow' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/wlr-draw.sock`.
 
-## Build
+## Install
+
+> **Want the whole suite?** Install the bundle instead — `cargo install wlr-utils` gets
+> every tool (`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`) in one
+> go. The single-tool install below is the lighter, à-la-carte option.
+
+```sh
+cargo install wlr-draw
+```
+
+Or build just this binary from the [wlr-utils](../../README.md) workspace:
 
 ```sh
 cargo build --release -p wlr-draw
 ```
 
-Needs a working EGL/GL stack (`libegl1`) and a wlroots compositor advertising
-`wlr-layer-shell` (sway, Hyprland, niri, …). `--no-default-features` drops Fluent and
-builds the UI hints English-only.
+`--no-default-features` drops Fluent (English-only hints) **and** the tray.
+
+## Requirements
+
+- **GL stack** — `libegl1` at runtime; the overlay renders through EGL/GLES.
+- **Compositor** — a wlroots one advertising `wlr-layer-shell` (sway, Hyprland, niri, …)
+  for the always-on-top overlay. Plain annotation needs only that, at any version.
+- **Screen capture** (freeze-frame `Space`, save `w`) — additionally needs
+  `ext-image-copy-capture-v1` with the output and foreign-toplevel sources, i.e.
+  **Sway ≥ 1.12 / wlroots ≥ 0.20**. Annotating without freezing or saving works below that.
+- **Tray** (`tray` feature, on by default) — a StatusNotifierItem host and `libdbus`.
+  `--no-default-features` drops the tray and its D-Bus dependency.
+
+## Uninstall
+
+Remove the binary, then the autostart entry it registers on first run (and the systemd
+unit if you installed one — paths honour `$XDG_CONFIG_HOME` / `$XDG_STATE_HOME`):
+
+```sh
+cargo uninstall wlr-draw      # if installed from crates.io
+rm -f ~/.config/autostart/wlr-draw.desktop \
+      ~/.local/state/wlr-draw/autostart-initialized
+# optional systemd unit:
+systemctl --user disable --now wlr-draw.service
+rm -f ~/.config/systemd/user/wlr-draw.service
+```
 
 ## Limitations
 

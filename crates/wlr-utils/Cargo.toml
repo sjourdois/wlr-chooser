@@ -1,0 +1,72 @@
+[package]
+name = "wlr-utils"
+description = "The wlr-utils suite in one install: wlr-chooser, wlr-switcher, wlr-peek, wlr-shot and wlr-draw (Wayland/wlroots screen tools)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["wayland", "wlroots", "screenshot", "screencast", "sway"]
+categories = ["command-line-utilities", "multimedia"]
+
+# This crate ships no library and no logic of its own: it is a thin bundle that
+# re-exports every tool's binary, so `cargo install wlr-utils` (and the prebuilt
+# release archive) install all of them at once. Each tool stays its own crate for
+# lighter, à-la-carte installs.
+[[bin]]
+name = "wlr-chooser"
+path = "src/bin/wlr-chooser.rs"
+
+[[bin]]
+name = "wlr-switcher"
+path = "src/bin/wlr-switcher.rs"
+
+[[bin]]
+name = "wlr-peek"
+path = "src/bin/wlr-peek.rs"
+
+[[bin]]
+name = "wlr-shot"
+path = "src/bin/wlr-shot.rs"
+
+[[bin]]
+name = "wlr-draw"
+path = "src/bin/wlr-draw.rs"
+
+[dependencies]
+# Each tool with its default features, so the bundle is the full-featured build
+# (GPU capture, OCR, video+audio recording, tray). Pull a single tool instead for a
+# lighter footprint: `cargo install wlr-shot`, etc.
+wlr-chooser = { path = "../wlr-chooser", version = "1.3.2" }
+wlr-peek = { path = "../wlr-peek", version = "1.3.2" }
+wlr-shot = { path = "../wlr-shot", version = "1.3.2" }
+wlr-draw = { path = "../wlr-draw", version = "1.3.2" }
+anyhow.workspace = true
+
+# A single Debian package shipping every tool, in place of one .deb per crate. EGL/GL are
+# dlopen'd at runtime, so `$auto` (ldd-based) can't see them — name `libegl1` explicitly;
+# the linked libs (FFmpeg, PipeWire, Tesseract, gbm, D-Bus…) are picked up automatically.
+# conflicts/replaces let it cleanly supersede any previously installed per-tool packages.
+[package.metadata.deb]
+maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
+section = "utils"
+priority = "optional"
+license-file = ["../../LICENSE-MIT", "0"]
+depends = "$auto, libegl1"
+conflicts = "wlr-chooser, wlr-shot, wlr-peek, wlr-draw, wlr-pip"
+replaces = "wlr-chooser, wlr-shot, wlr-peek, wlr-draw, wlr-pip"
+extended-description = """\
+The wlr-utils suite in one package: wlr-chooser (screen-share picker), wlr-switcher \
+(Alt-Tab/exposé), wlr-peek (colour picker, loupe, OCR, live mirror, watch, visual grep), \
+wlr-shot (screenshots and recording) and wlr-draw (on-screen annotation overlay) — native \
+screen tools for wlroots compositors, sharing one capture engine."""
+assets = [
+    ["../../target/release/wlr-chooser", "usr/bin/", "755"],
+    ["../../target/release/wlr-switcher", "usr/bin/", "755"],
+    ["../../target/release/wlr-peek", "usr/bin/", "755"],
+    ["../../target/release/wlr-shot", "usr/bin/", "755"],
+    ["../../target/release/wlr-draw", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/wlr-utils/README.md", "644"],
+]

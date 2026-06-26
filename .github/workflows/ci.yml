@@ -33,3 +33,7 @@ jobs:
         run: cargo test
       - name: Build
         run: cargo build --release --locked
+      - name: Build the wlr-utils bundle
+        # The bundle is excluded from default-members (it re-declares every tool's binary),
+        # so build it explicitly to catch entrypoint regressions.
+        run: cargo build --release --locked -p wlr-utils

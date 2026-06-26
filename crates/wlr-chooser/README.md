@@ -48,9 +48,9 @@ window or a monitor with a click.
 
 ## Requirements
 
-- A wlroots-based compositor exposing `ext-image-copy-capture-v1`,
-  `ext-image-capture-source-v1`, `ext-foreign-toplevel-list-v1` and
-  `wlr-layer-shell` (Sway ≥ 1.12 / wlroots ≥ 0.20).
+- A wlroots-based compositor exposing `ext-image-copy-capture-v1` with the output **and**
+  foreign-toplevel capture sources (the latter feeds the live window thumbnails),
+  `ext-foreign-toplevel-list-v1` and `wlr-layer-shell` (Sway ≥ 1.12 / wlroots ≥ 0.20).
 - `xdg-desktop-portal-wlr` ≥ 0.8 (for the screencast chooser use).
 - For the **GPU path** (default): a working EGL/GLES driver and `libgbm`
   (ships with Mesa). It falls back to CPU automatically if unavailable.
@@ -58,38 +58,35 @@ window or a monitor with a click.
 
 ## Install
 
-### From a package
-
-- **crates.io:** `cargo install wlr-chooser`.
-- **Debian/Ubuntu:** download the `.deb` from the
-  [latest release](https://github.com/sjourdois/wlr-chooser/releases/latest) and
-  `sudo apt install ./wlr-chooser_*.deb`.
-- **Arch (AUR):** _coming soon._
-
-### Prebuilt binary
-
-Download the binary for your platform from the
-[releases page](https://github.com/sjourdois/wlr-chooser/releases/latest), or run
-the installer script:
+> **Want the whole suite?** Install the bundle instead — `cargo install wlr-utils` gets
+> every tool (`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`) in one
+> go. The single-tool install below is the lighter, à-la-carte option.
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/sjourdois/wlr-chooser/releases/latest/download/wlr-chooser-installer.sh | sh
+cargo install wlr-chooser        # installs both wlr-chooser and wlr-switcher
 ```
 
-### From source
-
-`wlr-chooser` lives in the [wlr-utils](https://github.com/sjourdois/wlr-utils)
-Cargo workspace; build just this binary with `-p`:
+Or build just these binaries from the [wlr-utils](../../README.md) workspace:
 
 ```sh
-cargo build --release -p wlr-chooser   # GPU path on by default; needs libgbm-dev
-install -Dm755 target/release/wlr-chooser ~/.local/bin/wlr-chooser
+cargo build --release -p wlr-chooser
 ```
 
-The `gpu` feature (on by default) enables zero-copy dma-buf capture and needs
-`libgbm-dev` at build time (`libgbm` at runtime, from Mesa). For a pure-CPU
-build with no gbm dependency, use `cargo build --release --no-default-features`.
+The `gpu` feature (on by default) enables zero-copy dma-buf capture and needs `libgbm-dev`
+at build time (`libgbm` at runtime, from Mesa). `--no-default-features` builds a pure-CPU
+binary with no gbm dependency. The whole suite also ships as a single `wlr-utils` `.deb`
+on every [release](https://github.com/sjourdois/wlr-utils/releases/latest).
+
+## Uninstall
+
+The crate ships two binaries — `wlr-chooser` and `wlr-switcher`. Remove both the way you
+installed them:
+
+```sh
+cargo uninstall wlr-chooser                       # crates.io install (~/.cargo/bin)
+rm -f ~/.local/bin/wlr-chooser ~/.local/bin/wlr-switcher   # manual `install` from source
+sudo apt remove wlr-chooser                        # the .deb package
+```
 
 ## Set up the portal
 
@@ -167,9 +164,9 @@ time (re-pressing the keybind is a no-op).
 > **Tip:** set `WLR_CHOOSER_TIMING=1` to print cold-start timing milestones to
 > stderr if you want to profile how fast the overlay appears.
 
-> **Looking for a floating live mirror?** The companion tool **`wlr-pip`** keeps a
-> picture-in-picture of a window always on top — see its
-> [README](https://github.com/sjourdois/wlr-utils/tree/main/crates/wlr-pip).
+> **Looking for a floating live mirror?** **`wlr-peek mirror`** keeps a picture-in-picture
+> of a window (or a magnified region) always on top — see the
+> [wlr-peek README](https://github.com/sjourdois/wlr-utils/tree/main/crates/wlr-peek).
 
 ## Output contract
 

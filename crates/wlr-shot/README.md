@@ -106,19 +106,55 @@ Recording needs the `video` build feature (on by default), which links the syste
 FFmpeg libraries. A screenshots-only build drops it: `cargo build -p wlr-shot
 --no-default-features --features i18n`.
 
+## Install
+
+> **Want the whole suite?** Install the bundle instead — `cargo install wlr-utils` gets
+> every tool (`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`) in one
+> go. The single-tool install below is the lighter, à-la-carte option.
+
+```sh
+cargo install wlr-shot
+```
+
+Or build just this binary from the [wlr-utils](../../README.md) workspace:
+
+```sh
+cargo build --release -p wlr-shot
+```
+
+The default build records video and links the system FFmpeg libraries (see
+**Requirements** below). For a screenshots-only binary with no FFmpeg dependency:
+`cargo build -p wlr-shot --no-default-features --features i18n`.
+
 ## Requirements
 
-A wlroots compositor exposing `ext-image-copy-capture-v1`,
-`ext-image-capture-source-v1` and `ext-output-image-capture-source-manager-v1`
-(Sway ≥ 1.12 / wlroots ≥ 0.20). `xdg-output` is used for accurate logical
-geometry when present.
+A wlroots compositor exposing `ext-image-copy-capture-v1` with both the
+`ext-output-image-capture-source-manager-v1` (outputs) and
+`ext-foreign-toplevel-image-capture-source-manager-v1` (windows) sources — **Sway ≥ 1.12 /
+wlroots ≥ 0.20**, the floor for the window source. `xdg-output` is used for accurate
+logical geometry when present, and the clipboard (`-c`) needs
+`zwlr_data_control_manager_v1`. Run `wlr-peek doctor` to see what your compositor exposes.
 
-The default build (with `record`) links the system **FFmpeg** libraries, so it needs
-their development packages at build time — on Debian/Ubuntu: `libavcodec-dev
+The interactive region selector (`-s`) renders a frozen overlay through EGL/GLES, so
+**every build** needs a working GL stack (`libegl1`) at runtime. Screenshots use CPU shm
+capture, so no `libgbm` is required.
+
+The default build (with `record`) additionally links the system **FFmpeg** libraries, so
+it needs their development packages at build time — on Debian/Ubuntu: `libavcodec-dev
 libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswscale-dev
 libswresample-dev libva-dev` (and `clang` for the bindings). Hardware encoding needs
 the matching runtime: NVIDIA's `libnvidia-encode` for NVENC, or a VAAPI driver for
-your GPU. None of this is required for the screenshots-only build.
+your GPU. The default `audio` feature records system sound through **PipeWire**, linking
+`libpipewire-0.3` (and `clang` to build); drop it with `--features video` (video only) or
+build screenshots-only (`--no-default-features --features i18n`) to need none of this.
+
+## Uninstall
+
+```sh
+cargo uninstall wlr-shot          # crates.io install; or: rm -f ~/.local/bin/wlr-shot
+```
+
+wlr-shot writes no config or state files — removing the binary is enough.
 
 ## License
 

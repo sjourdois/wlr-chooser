@@ -28,7 +28,7 @@ tray = ["dep:ksni"]
 # The shared engine: the egui/EGL `render::Gpu`, theme and the `tr!` macro (`toolkit`),
 # plus the one-shot output capture (`compose`) used for the freeze-frame backdrop. The
 # overlay is otherwise a transparent vector layer (no live stream).
-wlr-capture = { path = "../wlr-capture", version = "1.3.0", default-features = false, features = ["toolkit", "compose"] }
+wlr-capture = { path = "../wlr-capture", version = "1.3.2", default-features = false, features = ["toolkit", "compose"] }
 anyhow.workspace = true
 clap.workspace = true
 egui.workspace = true
@@ -60,3 +60,8 @@ assets = [
     ["../../target/release/wlr-draw", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/wlr-draw/README.md", "644"],
 ]
+
+[package.metadata.dist]
+# Bundled into the `wlr-utils` crate for prebuilt archives/installers; not shipped as a
+# standalone prebuilt app (still published to crates.io for à-la-carte `cargo install`).
+dist = false

@@ -18,7 +18,6 @@ Five sharp tools for **wlroots** compositors, all sharing one capture engine.
 | **[wlr-peek](crates/wlr-peek)** | **Inspect the screen** — colour picker, loupe, OCR, live picture-in-picture **mirror** (window or region), **change monitor** (`watch`), and **visual grep**. | [![v](https://img.shields.io/crates/v/wlr-peek.svg)](https://crates.io/crates/wlr-peek) |
 | **[wlr-shot](crates/wlr-shot)** | **Screen capture** — screenshots of an output/region/window (PNG/JPEG/PPM), copy to clipboard; plus **recording** (H.264, or animated GIF/WebP) with **system audio** & **timelapse** (NVENC/VAAPI/libx264). | [![v](https://img.shields.io/crates/v/wlr-shot.svg)](https://crates.io/crates/wlr-shot) |
 | **[wlr-draw](crates/wlr-draw)** | **Draw on screen** — a transparent annotation overlay (gromit-mpx-style): freehand, shapes, arrows, text, dwell-to-snap, element move, plus presenter **spotlight**, **freeze-frame** and **save**. Daemon + control socket. | [![v](https://img.shields.io/crates/v/wlr-draw.svg)](https://crates.io/crates/wlr-draw) |
-| **[wlr-pip](crates/wlr-pip)** | _Deprecated_ — the live mirror moved to `wlr-peek mirror`; this is a stub pointing there. | [![v](https://img.shields.io/crates/v/wlr-pip.svg)](https://crates.io/crates/wlr-pip) |
 
 They all share **[wlr-capture](crates/wlr-capture)**, a library with the wlroots
 capture engine (`ext-image-copy-capture-v1`, full-resolution dma-buf zero-copy
@@ -36,37 +35,72 @@ with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
 
 ## Requirements
 
-- A wlroots compositor exposing `ext-image-copy-capture-v1`,
-  `ext-image-capture-source-v1`, `ext-foreign-toplevel-list-v1` (and
-  `wlr-layer-shell` for `wlr-chooser`) — Sway ≥ 1.12 / wlroots ≥ 0.20. See
-  [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix (Hyprland, niri, …), or
-  run `wlr-peek doctor` to check your own compositor.
-- For the **GPU path** (default): a working EGL/GLES driver and `libgbm` (Mesa).
-  Falls back to CPU shm automatically.
+- A wlroots compositor exposing `ext-image-copy-capture-v1` with the output **and**
+  foreign-toplevel capture sources, plus `ext-foreign-toplevel-list-v1` (and
+  `wlr-layer-shell` for the overlays) — **Sway ≥ 1.12 / wlroots ≥ 0.20**, the floor for
+  the window source the tools open. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full
+  matrix (Hyprland, niri, …), or run `wlr-peek doctor` to check your own compositor.
+- **GL stack** — every tool renders overlays through EGL/GLES, so `libegl1` is needed at
+  runtime. `wlr-chooser` also builds the zero-copy **GPU path** by default, which adds
+  `libgbm` (Mesa); `wlr-shot` and `wlr-peek` capture via CPU shm and need no `libgbm`.
 - `wlr-chooser` also needs `xdg-desktop-portal-wlr` ≥ 0.8 (portal use);
   `wlr-switcher` needs `zwlr-foreign-toplevel-management-v1` to focus windows.
 
 ## Install
 
-Each tool is its own crate — install the ones you want. Per-tool instructions
-live in each crate's README. In short:
+**Everything at once** — the `wlr-utils` crate bundles all five binaries
+(`wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw`):
+
+```sh
+cargo install wlr-utils
+```
+
+Or grab the **prebuilt bundle** from the
+[latest release](https://github.com/sjourdois/wlr-utils/releases/latest) — one archive
+with every binary, plus a one-line installer:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/sjourdois/wlr-utils/releases/latest/download/wlr-utils-installer.sh | sh
+```
+
+**À la carte** — each tool is also its own crate, for a lighter, single-purpose install
+(only the system deps that tool needs). Per-tool instructions live in each crate's README:
 
 ```sh
 cargo install wlr-chooser        # window/screen picker + wlr-switcher (Alt-Tab/exposé)
 cargo install wlr-peek           # colour picker, loupe, OCR, live mirror, watch
 cargo install wlr-shot           # screenshots + recording
 cargo install wlr-draw           # annotation overlay
-
-# …or all at once:
-cargo install wlr-chooser wlr-peek wlr-shot wlr-draw
 ```
 
-Prebuilt binaries, installer scripts and `.deb` packages are attached to every
-[release](https://github.com/sjourdois/wlr-utils/releases/latest). To build the
-whole workspace from source (the `gpu` feature needs `libgbm-dev` at build time):
+A single `.deb` (the whole suite) is also attached to every release. To build the whole
+workspace from source (the `gpu` feature needs `libgbm-dev` at build time):
 
 ```sh
 cargo build --release            # builds all binaries
+```
+
+### Uninstall
+
+`cargo install` drops the binaries in `~/.cargo/bin`. Remove the bundle with
+`cargo uninstall wlr-utils`, or an individual tool the same way:
+
+```sh
+cargo uninstall wlr-utils        # the whole bundle
+cargo uninstall wlr-draw         # …or just one: wlr-chooser / wlr-peek / wlr-shot
+```
+
+`wlr-draw` also registers an XDG autostart entry on first run (see its README). Drop the
+checkbox in its tray menu, or delete the files by hand (honouring `$XDG_CONFIG_HOME` /
+`$XDG_STATE_HOME` if you set them):
+
+```sh
+rm -f ~/.config/autostart/wlr-draw.desktop \
+      ~/.local/state/wlr-draw/autostart-initialized
+# and, if you installed the systemd unit:
+systemctl --user disable --now wlr-draw.service
+rm -f ~/.config/systemd/user/wlr-draw.service
 ```
 
 ## Documentation

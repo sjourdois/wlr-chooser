@@ -24,7 +24,7 @@ name = "wlr-switcher"
 path = "src/bin/wlr-switcher.rs"
 
 [dependencies]
-wlr-capture = { path = "../wlr-capture", version = "1.3.0", default-features = false, features = ["toolkit"] }
+wlr-capture = { path = "../wlr-capture", version = "1.3.2", default-features = false, features = ["toolkit"] }
 anyhow.workspace = true
 egui.workspace = true
 smithay-client-toolkit.workspace = true
@@ -62,3 +62,8 @@ assets = [
     ["README.md", "usr/share/doc/wlr-chooser/README.md", "644"],
     ["../../docs/themes/*.toml", "usr/share/doc/wlr-chooser/themes/", "644"],
 ]
+
+[package.metadata.dist]
+# Bundled into the `wlr-utils` crate for prebuilt archives/installers; not shipped as a
+# standalone prebuilt app (still published to crates.io for à-la-carte `cargo install`).
+dist = false

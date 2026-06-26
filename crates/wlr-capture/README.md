@@ -74,4 +74,3 @@ Licensed under either of [Apache-2.0](../../LICENSE-APACHE) or
 [MIT](../../LICENSE-MIT) at your option.
 
 [`wlr-chooser`]: https://crates.io/crates/wlr-chooser
-[`wlr-pip`]: https://crates.io/crates/wlr-pip

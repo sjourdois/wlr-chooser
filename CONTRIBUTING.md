@@ -14,23 +14,30 @@ welcome.
 | `wlr-shot` | `wlr-shot` | screenshots & recording |
 | `wlr-peek` | `wlr-peek` | colour picker, loupe, mirror, OCR, grep, watch |
 | `wlr-draw` | `wlr-draw` | on-screen annotation overlay |
-| `wlr-pip` | `wlr-pip` | deprecated stub (use `wlr-peek mirror`) |
+| `wlr-utils` | `wlr-chooser`, `wlr-switcher`, `wlr-peek`, `wlr-shot`, `wlr-draw` | bundle crate re-exporting every tool's binary (`cargo install wlr-utils`); kept out of `default-members` so a plain build doesn't clash on duplicate binary names |
 
 ## Building & checks
 
-Build the whole workspace, or a single tool with `-p`:
+Build the default set (every tool, **not** the bundle), or a single tool with `-p`:
 
 ```sh
-cargo build                       # everything
+cargo build                       # all tools (default-members)
 cargo build --release -p wlr-shot # just one tool
+cargo build -p wlr-utils          # the bundle (re-exports the same binaries)
 ```
+
+> Avoid `--workspace` for builds: it pulls in the `wlr-utils` bundle alongside the
+> individual crates, and Cargo warns about the duplicate binary names. The default set
+> excludes the bundle, so plain `cargo build` / `cargo test` stay clean; check the bundle
+> on its own with `-p wlr-utils`.
 
 Before opening a pull request, make these clean (CI runs the same):
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-cargo test --workspace
+cargo test
+cargo build -p wlr-utils          # the bundle isn't in the default set
 ```
 
 The engine has feature combinations worth checking when you touch it, e.g.
