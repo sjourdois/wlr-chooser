@@ -109,6 +109,22 @@ pub fn main() {
         live: cli.live.into(),
     };
 
+    // Pre-flight: wlr-switcher switches *windows*, which need the foreign-toplevel
+    // capture source (wlroots >= 0.20 / Sway >= 1.12). On older compositors connect()
+    // now succeeds for screen-only capture, but there are no windows to offer — so say
+    // so clearly and exit, instead of showing an empty dimmed overlay (issue #1).
+    match wl::Client::connect() {
+        Ok(client) if !client.can_capture_windows() => {
+            eprintln!("{}", tr!("capture-no-window"));
+            std::process::exit(2);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", tr!("error", error = format!("{e:#}")));
+            std::process::exit(2);
+        }
+    }
+
     match run_overlay(opts, t0) {
         Ok(Some(sel)) => {
             // Focus the picked window (outputs aren't focusable, so ignore them).
