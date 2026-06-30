@@ -903,31 +903,20 @@ fn doctor() -> Result<()> {
     let window = version("ext_foreign_toplevel_image_capture_source_manager_v1").is_some();
     println!();
     if core {
-        // The output source is the protocol floor for screen capture, but the tools open
-        // the window source at start-up too (see below), so on a screen-only compositor
-        // they still won't run — flag that rather than a bare "supported".
-        if window {
-            println!("Screen capture: supported.");
-        } else {
-            println!(
-                "Screen capture: advertised by the compositor, but the tools also open the \
-                 window source at start-up, so they need wlroots ≥ 0.20 / Sway ≥ 1.12 too \
-                 (see below)."
-            );
-        }
+        println!("Screen capture: supported (screenshots, recording, loupe, colour picker, wlr-draw).");
     } else {
         println!(
             "Screen capture: UNSUPPORTED — needs ext-image-copy-capture-v1 + the output \
-             source (wlroots ≥ 0.19 / Sway ≥ 1.11; not on Mutter/KWin)."
+             source (wlroots ≥ 0.19 / Sway ≥ 1.11; not on Mutter/KWin via this path)."
         );
     }
     if window {
-        println!("Window capture: supported.");
+        println!("Window capture: supported (wlr-switcher, -w/--pick-window, window mirror/record).");
     } else {
         println!(
             "Window capture: UNSUPPORTED — needs the foreign-toplevel source \
-             (wlroots ≥ 0.20 / Sway ≥ 1.12). Every tool here opens this source at \
-             start-up, so none will run without it — even for a screen capture."
+             (wlroots ≥ 0.20 / Sway ≥ 1.12). Screen capture still works; only window-only \
+             features are unavailable (wlr-switcher exits with a notice)."
         );
     }
 
