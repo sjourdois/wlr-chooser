@@ -527,6 +527,9 @@ struct State {
     tl_src: Option<ExtForeignToplevelImageCaptureSourceManagerV1>,
     out_src: Option<ExtOutputImageCaptureSourceManagerV1>,
     copy: Option<ExtImageCopyCaptureManagerV1>,
+    /// The foreign-toplevel list, kept alive so the compositor keeps emitting
+    /// toplevel events. `None` on compositors without window capture (wlroots < 0.20).
+    list: Option<ExtForeignToplevelListV1>,
     /// linux-dmabuf manager, if the compositor exposes it (enables the GPU path).
     #[cfg(feature = "gpu")]
     dmabuf: Option<ZwpLinuxDmabufV1>,
@@ -561,19 +564,16 @@ impl Client {
         let copy = globals
             .bind(&qh, 1..=1, ())
             .context("ext_image_copy_capture_manager_v1 missing")?;
-        let tl_src = globals.bind(&qh, 1..=1, ()).context(
-            "ext_foreign_toplevel_image_capture_source_manager_v1 missing: \
-             this compositor cannot capture individual windows. The foreign-toplevel \
-             capture source requires wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / \
-             Sway 1.11 only expose output capture. Run `wlr-peek doctor` to see what \
-             your compositor supports.",
-        )?;
+        // Window capture (the foreign-toplevel source + list) only landed in
+        // wlroots >= 0.20 / Sway >= 1.12. Bind them optionally so screen-only capture
+        // still works on wlroots 0.19 / Sway 1.11; window-specific paths then fail with
+        // a clear, localised error (see `open_toplevel_session`). Screen capture
+        // (`copy` + `out_src`) stays mandatory — it is the minimum every tool needs.
+        let tl_src = globals.bind(&qh, 1..=1, ()).ok();
         let out_src = globals
             .bind(&qh, 1..=1, ())
             .context("ext_output_image_capture_source_manager_v1 missing")?;
-        let _list: ExtForeignToplevelListV1 = globals
-            .bind(&qh, 1..=1, ())
-            .context("ext_foreign_toplevel_list_v1 missing")?;
+        let list: Option<ExtForeignToplevelListV1> = globals.bind(&qh, 1..=1, ()).ok();
 
         // Optional: authoritative logical geometry (multi-monitor positions,
         // fractional scale). Absent on a few compositors — we then fall back to
@@ -596,8 +596,9 @@ impl Client {
         let mut state = State {
             shm: Some(shm),
             copy: Some(copy),
-            tl_src: Some(tl_src),
+            tl_src,
             out_src: Some(out_src),
+            list,
             ..Default::default()
         };
         // Optional: enables the GPU dma-buf path. Absence just means shm-only.
@@ -627,6 +628,13 @@ impl Client {
         &self.state.outputs
     }
 
+    /// Whether this compositor can capture individual windows (the foreign-toplevel
+    /// image-capture source *and* list — wlroots >= 0.20 / Sway >= 1.12). When `false`,
+    /// only screen (output) capture works; window paths return a clear error.
+    pub fn can_capture_windows(&self) -> bool {
+        self.state.tl_src.is_some() && self.state.list.is_some()
+    }
+
     /// Drain pending Wayland events (new/closed toplevels, etc.) without blocking
     /// on a capture, so the source list stays current between capture rounds.
     pub fn refresh(&mut self) -> Result<()> {
@@ -642,7 +650,7 @@ impl Client {
             .state
             .tl_src
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!(crate::tr!("capture-no-window")))?
             .create_source(&t.handle, &self.qh, ());
         self.open_session(src)
     }
