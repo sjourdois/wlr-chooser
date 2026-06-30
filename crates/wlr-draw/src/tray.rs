@@ -28,6 +28,8 @@ pub struct DrawTray {
     pub color: Color,
     pub tool: Tool,
     autostart: bool,
+    /// Whether screen capture works here; gates the freeze/save shortcut rows (issue #1).
+    capture_available: bool,
 }
 
 /// Side of the generated tray icon (px).
@@ -92,7 +94,7 @@ impl Tray for DrawTray {
             MenuItem::Separator,
             SubMenu {
                 label: tr!("tray-shortcuts"),
-                submenu: shortcut_items(),
+                submenu: shortcut_items(self.capture_available),
                 ..Default::default()
             }
             .into(),
@@ -133,8 +135,8 @@ impl Tray for DrawTray {
 
 /// The keyboard / gesture cheat-sheet (shared with the on-screen `h` legend) as disabled
 /// (informational) menu entries, available straight from the tray.
-fn shortcut_items() -> Vec<MenuItem<DrawTray>> {
-    crate::overlay::shortcut_rows()
+fn shortcut_items(capture_available: bool) -> Vec<MenuItem<DrawTray>> {
+    crate::overlay::shortcut_rows(capture_available)
         .into_iter()
         .map(|(key, desc)| {
             StandardItem {
@@ -149,7 +151,12 @@ fn shortcut_items() -> Vec<MenuItem<DrawTray>> {
 
 /// Start the tray on its own thread, returning a handle for status updates. `None` if
 /// there is no D-Bus session bus (e.g. headless), so the daemon still runs.
-pub fn spawn(tx: Sender<Cmd>, color: Color, tool: Tool) -> Option<Handle<DrawTray>> {
+pub fn spawn(
+    tx: Sender<Cmd>,
+    color: Color,
+    tool: Tool,
+    capture_available: bool,
+) -> Option<Handle<DrawTray>> {
     std::env::var_os("DBUS_SESSION_BUS_ADDRESS")?; // no session bus → no tray
     // One-time auto-register on first ever run; harmless on later launches.
     crate::autostart::ensure_initialized();
@@ -159,6 +166,7 @@ pub fn spawn(tx: Sender<Cmd>, color: Color, tool: Tool) -> Option<Handle<DrawTra
         color,
         tool,
         autostart: crate::autostart::is_enabled(),
+        capture_available,
     }
     .spawn()
     .ok()

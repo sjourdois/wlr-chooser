@@ -216,6 +216,8 @@ struct Frame<'a> {
     visible: bool,
     show_help: bool,
     show_palette: bool,
+    /// Whether screen capture is available (drives whether freeze/save are listed).
+    capture_available: bool,
     /// Status-chip attention pulse (0 = none … 1 = peak).
     flash: f32,
     /// Index of the selected element (drawn with a handle outline), if any.
@@ -260,6 +262,10 @@ struct State {
     /// Lazily-opened capture connection (separate from the overlay's), reused across
     /// freezes. Uses shm, so it never touches the overlay's EGL contexts.
     capture_client: Option<wl::Client>,
+    /// Whether this compositor can capture the screen (ext-image-copy-capture + an
+    /// output source, wlroots >= 0.19). Freeze and save need it; when `false` they are
+    /// hidden from the help/tray and no-op with a clear message (issue #1).
+    capture_available: bool,
     /// Whether annotations are shown (visibility toggle).
     visible: bool,
     /// On-screen key legend (the `h` shortcut).
@@ -316,6 +322,7 @@ impl State {
             visible: self.visible,
             show_help: self.show_help,
             show_palette: self.show_palette,
+            capture_available: self.capture_available,
             flash,
             selected: self.selected,
         };
@@ -401,6 +408,10 @@ impl State {
     /// Toggle the freeze-frame backdrop: capture every output once and show it frozen so
     /// the user can annotate a still image; toggling again (or Esc) returns to live.
     fn toggle_freeze(&mut self) {
+        if !self.capture_available {
+            eprintln!("wlr-draw: {}", tr!("draw-capture-unavailable"));
+            return;
+        }
         if self.frozen {
             self.unfreeze();
         } else if let Err(e) = self.freeze() {
@@ -457,6 +468,10 @@ impl State {
     /// layout). The capture grabs the composited output, so the overlay's strokes are
     /// baked into the image.
     fn save_screenshot(&mut self, path: Option<String>) {
+        if !self.capture_available {
+            eprintln!("wlr-draw: {}", tr!("draw-capture-unavailable"));
+            return;
+        }
         match self.do_save(path) {
             Ok(p) => eprintln!("wlr-draw: saved {}", p.display()),
             Err(e) => eprintln!("wlr-draw: save failed: {e}"),
@@ -1061,6 +1076,13 @@ pub fn run() -> anyhow::Result<()> {
         spotlight_latched: false,
         frozen: false,
         capture_client: None,
+        // Probe once whether the screen can be captured (ext-image-copy-capture + an
+        // output source). Freeze/save need it; on compositors without it we hide those
+        // from the help/tray rather than failing at first use (issue #1). Drawing and
+        // click-through need no capture and always work.
+        capture_available: wl::Client::connect()
+            .map(|c| !c.outputs().is_empty())
+            .unwrap_or(false),
         visible: true,
         show_help: false,
         show_palette: false,
@@ -1134,7 +1156,7 @@ pub fn run() -> anyhow::Result<()> {
     #[cfg(feature = "tray")]
     {
         ipc::serve(listener, tx.clone());
-        state.tray = crate::tray::spawn(tx, state.color, state.tool);
+        state.tray = crate::tray::spawn(tx, state.color, state.tool, state.capture_available);
     }
     #[cfg(not(feature = "tray"))]
     ipc::serve(listener, tx);
@@ -1885,8 +1907,8 @@ fn paint_palette(p: &egui::Painter, ui: &egui::Ui, frame: &Frame) {
 /// The full key/gesture cheat-sheet as `(key, description)` rows — one tool per line so
 /// every shortcut is explicit. Shared by the on-screen [`paint_help`] legend and the
 /// tray's Shortcuts submenu, so they never drift apart.
-pub(crate) fn shortcut_rows() -> Vec<(&'static str, String)> {
-    vec![
+pub(crate) fn shortcut_rows(capture_available: bool) -> Vec<(&'static str, String)> {
+    let mut rows = vec![
         ("p", tool_label(Tool::Pen)),
         ("r", tool_label(Tool::Rect)),
         ("m", tool_label(Tool::Mask)),
@@ -1912,14 +1934,20 @@ pub(crate) fn shortcut_rows() -> Vec<(&'static str, String)> {
         ("drag", tr!("draw-help-draw")),
         ("hold", tr!("draw-help-snap")),
         ("type", tr!("draw-help-text")),
-    ]
+    ];
+    // Freeze (Space) and save (w) need screen capture; hide them on compositors that
+    // can't capture, so the legend only lists what actually works here (issue #1).
+    if !capture_available {
+        rows.retain(|(key, _)| *key != "Space" && *key != "w");
+    }
+    rows
 }
 
 /// Paint the top-left key legend (the `h` shortcut). Keys are shown as fixed caps; the
 /// descriptions are localised.
 fn paint_help(p: &egui::Painter, _ui: &egui::Ui, frame: &Frame) {
     let t = frame.theme;
-    let rows = shortcut_rows();
+    let rows = shortcut_rows(frame.capture_available);
     let key_font = egui::FontId::monospace(13.0);
     let desc_font = egui::FontId::proportional(13.0);
     let line_h = 19.0;
