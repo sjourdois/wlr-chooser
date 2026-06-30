@@ -25,29 +25,59 @@ whether screen capture and focus-aware sources will work.
 | compositor IPC | "the active window" / "the current output" (`-a`, `--current-output`) | a per-compositor focus backend |
 
 `ext-image-capture-source-v1` is the linchpin, and it landed in two steps: the base
-protocol plus the **output** source arrived in **wlroots 0.19** (Sway ≥ 1.11), but the
+protocol plus the **output** source arrived in **wlroots 0.19** (Sway ≥ 1.11), while the
 **foreign-toplevel** source (`ext_foreign_toplevel_image_capture_source_manager_v1`) —
-which window capture depends on — only arrived in **wlroots 0.20** (Sway ≥ 1.12). Since
-every tool here opens the window source at start-up (even for a screen capture), the
-effective floor is **wlroots 0.20 / Sway ≥ 1.12**. A Sway 1.11 compositor advertises
-screen capture, but the tools still abort with
-`ext_foreign_toplevel_image_capture_source_manager_v1 missing`. None of this is
-implemented by GNOME's Mutter or KDE's KWin, which only offer screen capture through the
-desktop portal / PipeWire — out of scope here.
+which window capture depends on — only arrived in **wlroots 0.20** (Sway ≥ 1.12).
+
+So there are **two floors**:
+
+- **Screen capture** — `ext-image-copy-capture-v1` + the **output** source: **wlroots ≥ 0.19
+  / Sway ≥ 1.11**. Screenshots, recording, the loupe/colour picker, region select, and
+  wlr-draw's freeze & save work here.
+- **Window capture** — additionally the **foreign-toplevel** source + list: **wlroots ≥ 0.20
+  / Sway ≥ 1.12**. The Alt-Tab switcher, `-w`/`--pick-window`, and per-window mirror/record
+  need this.
+
+The tools **degrade gracefully**: on a Sway 1.11 / wlroots 0.19 compositor the screen
+features all work, while window-only paths fail with a clear message (`wlr-switcher` says so
+and exits instead of showing an empty overlay; wlr-draw hides freeze/save when even screen
+capture is missing). Run `wlr-peek doctor` to see which of the two your compositor offers.
 
 ## Compositors
 
-Any **wlroots-based** compositor that advertises the protocols above should work —
-**Sway**, **Hyprland**, **niri**, **river**, **Wayfire**, **cosmic-comp** and the like.
-Run `wlr-peek doctor` to check yours.
+The matrix below tracks the two capture floors plus `wlr-layer-shell` (needed by every
+overlay: the switcher, region selector, loupe/colour picker and wlr-draw) and the focus IPC
+backend (for `-a` / `--current-output`). Run `wlr-peek doctor` to check your own.
+
+| Compositor | Screen capture | Window capture | Overlays (layer-shell) | Focus IPC |
+| --- | --- | --- | --- | --- |
+| **Sway** | ✅ ≥ 1.11 (wlroots 0.19) | ✅ ≥ 1.12 (wlroots 0.20) | ✅ | ✅ `swaymsg` |
+| **Hyprland** | ✅ ≥ v0.54 | ✅ ≥ v0.54 | ✅ | ✅ `hyprctl` |
+| **labwc** | ✅ ≥ 0.9 (wlroots 0.19) | 🟡 ≥ 0.20 (partial) | ✅ | ❌ |
+| **cosmic-comp** | ✅ | ✅ | ✅ | ❌ |
+| **Wayfire** | ✅ ≥ 0.10 (wlroots 0.19) | ❌ (until its 0.20 branch ships) | ✅ | ❌ |
+| **river** | ✅ ≥ 0.3 (wlroots 0.19) | ❌ | ✅ | ❌ |
+| **niri** | ❌ (`wlr-screencopy` only) | ❌ | ✅ | 🟡 `niri msg` (`-a` n/a) |
+| **dwl** | ❌ (`wlr-screencopy` only) | ❌ | ✅ | ❌ |
+| **Mutter** (GNOME) | ✅ (≥ 49) | ❌ | ❌ | ❌ |
+| **KWin** (KDE) | ✅ (≥ 6.6) | ❌ | ❌ | ❌ |
+
+✅ full · 🟡 partial · ❌ none. Versions are from each project's release notes / merge
+requests (the per-interface numbers on wayland.app are unreliable snapshots).
 
 Only **Sway** (≥ 1.12 / wlroots ≥ 0.20) is **runtime-verified** — it's the development
-compositor. The others are *expected* to work from their protocol support, but haven't
-been exercised end-to-end yet.
+compositor. The others are inferred from their protocol support and haven't been exercised
+end-to-end yet; reports welcome.
 
-**Mutter** (GNOME) and **KWin** (KDE Plasma) are **out of scope**: they don't implement
-`ext-image-copy-capture-v1` (or `wlr-layer-shell`), offering screen capture only through
-the desktop portal / PipeWire, which this suite deliberately doesn't use.
+Two caveats:
+
+- **Mutter / KWin** now implement `ext-image-copy-capture-v1` (screen capture), but **not
+  `wlr-layer-shell`** — so the overlay tools (switcher, region select, loupe, wlr-draw) can't
+  run there, and only non-interactive whole-output capture could work. They remain largely
+  out of scope; their first-class path is the desktop portal / PipeWire, which this suite
+  deliberately doesn't use.
+- **niri / dwl** expose only the older `wlr-screencopy-v1`, which this suite doesn't use, so
+  they don't work yet (an `ext-image-copy-capture` fallback would be needed).
 
 Two things vary by compositor:
 

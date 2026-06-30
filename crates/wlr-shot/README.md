@@ -128,12 +128,13 @@ The default build records video and links the system FFmpeg libraries (see
 
 ## Requirements
 
-A wlroots compositor exposing `ext-image-copy-capture-v1` with both the
-`ext-output-image-capture-source-manager-v1` (outputs) and
-`ext-foreign-toplevel-image-capture-source-manager-v1` (windows) sources — **Sway ≥ 1.12 /
-wlroots ≥ 0.20**, the floor for the window source. `xdg-output` is used for accurate
-logical geometry when present, and the clipboard (`-c`) needs
-`zwlr_data_control_manager_v1`. Run `wlr-peek doctor` to see what your compositor exposes.
+A wlroots compositor exposing `ext-image-copy-capture-v1`. Output/region screenshots and
+recording need the `ext-output-image-capture-source-manager-v1` source — **Sway ≥ 1.11 /
+wlroots ≥ 0.19**; capturing a **window** (`-w`/`--pick-window`) additionally needs
+`ext-foreign-toplevel-image-capture-source-manager-v1` — **Sway ≥ 1.12 / wlroots ≥ 0.20**.
+`xdg-output` is used for accurate logical geometry when present, and the clipboard (`-c`)
+needs `zwlr_data_control_manager_v1`. Run `wlr-peek doctor` to see what your compositor
+exposes; see [COMPATIBILITY.md](../../COMPATIBILITY.md) for the full matrix.
 
 The interactive region selector (`-s`) renders a frozen overlay through EGL/GLES, so
 **every build** needs a working GL stack (`libegl1`) at runtime. Screenshots use CPU shm

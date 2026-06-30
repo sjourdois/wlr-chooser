@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Screen-only compositors** — tools degrade gracefully on wlroots 0.19 / Sway 1.11:
+  screen capture (screenshots, recording, loupe, `wlr-draw` freeze/save) works; window-only
+  features stay off with a clear notice, and `wlr-switcher` reports the missing window
+  capture and exits instead of showing an empty overlay (#1).
+
+### Fixed
+
+- **Debian / Ubuntu `.deb`** — now built per distro (Debian 12–sid, Ubuntu 22.04–26.04) so
+  it links against that distro's FFmpeg / Leptonica; fixes `liblept.so.5` / `libavutil.so.58`
+  load failures on Debian 13 (#1).
+- **`wlr-peek doctor`** — verdicts reflect the two capture floors (screen 0.19/1.11,
+  window 0.20/1.12).
+
+### Changed
+
+- **Docs** — added a compositor compatibility matrix and per-distro `.deb` install notes.
+
 ## 1.3.2 — 2026-06-26
 
 ### Added

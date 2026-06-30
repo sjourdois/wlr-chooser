@@ -208,8 +208,9 @@ cargo build --release -p wlr-draw
 - **Compositor** — a wlroots one advertising `wlr-layer-shell` (sway, Hyprland, niri, …)
   for the always-on-top overlay. Plain annotation needs only that, at any version.
 - **Screen capture** (freeze-frame `Space`, save `w`) — additionally needs
-  `ext-image-copy-capture-v1` with the output and foreign-toplevel sources, i.e.
-  **Sway ≥ 1.12 / wlroots ≥ 0.20**. Annotating without freezing or saving works below that.
+  `ext-image-copy-capture-v1` with the **output** source, i.e. **Sway ≥ 1.11 /
+  wlroots ≥ 0.19**. Where it's missing, freeze and save are hidden from the help/tray and
+  plain annotation still works. See [COMPATIBILITY.md](../../COMPATIBILITY.md).
 - **Tray** (`tray` feature, on by default) — a StatusNotifierItem host and `libdbus`.
   `--no-default-features` drops the tray and its D-Bus dependency.
 

@@ -35,11 +35,13 @@ with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
 
 ## Requirements
 
-- A wlroots compositor exposing `ext-image-copy-capture-v1` with the output **and**
-  foreign-toplevel capture sources, plus `ext-foreign-toplevel-list-v1` (and
-  `wlr-layer-shell` for the overlays) — **Sway ≥ 1.12 / wlroots ≥ 0.20**, the floor for
-  the window source the tools open. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full
-  matrix (Hyprland, niri, …), or run `wlr-peek doctor` to check your own compositor.
+- A wlroots compositor exposing `ext-image-copy-capture-v1` (and `wlr-layer-shell` for
+  the overlays). **Screen capture** needs the output source — **wlroots ≥ 0.19 /
+  Sway ≥ 1.11**; **window capture** (the switcher, `-w`, window mirror/record) additionally
+  needs the foreign-toplevel source + `ext-foreign-toplevel-list-v1` — **wlroots ≥ 0.20 /
+  Sway ≥ 1.12**. Tools degrade gracefully: where windows aren't capturable they keep their
+  screen features and say so. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix
+  (Hyprland, niri, labwc, …), or run `wlr-peek doctor` to check your own compositor.
 - **GL stack** — every tool renders overlays through EGL/GLES, so `libegl1` is needed at
   runtime. `wlr-chooser` also builds the zero-copy **GPU path** by default, which adds
   `libgbm` (Mesa); `wlr-shot` and `wlr-peek` capture via CPU shm and need no `libgbm`.
@@ -74,8 +76,27 @@ cargo install wlr-shot           # screenshots + recording
 cargo install wlr-draw           # annotation overlay
 ```
 
-A single `.deb` (the whole suite) is also attached to every release. To build the whole
-workspace from source (the `gpu` feature needs `libgbm-dev` at build time):
+**Debian / Ubuntu `.deb`** — a single package with the whole suite is attached to every
+release, built **per distro** so it links against that distro's FFmpeg / Leptonica. Pick the
+one matching your system:
+
+| Distro | Asset suffix |
+| --- | --- |
+| Debian 12 (bookworm) | `…_amd64.bookworm.deb` |
+| Debian 13 (trixie) | `…_amd64.trixie.deb` |
+| Debian 14 (forky) / sid | `…_amd64.forky.deb` / `…_amd64.sid.deb` |
+| Ubuntu 22.04 / 24.04 / 26.04 | `…_amd64.noble.deb`, etc. |
+
+> [!IMPORTANT]
+> These `.deb`s link **dynamically** against the FFmpeg (`libavutil`) and Leptonica
+> (`liblept`) of the distro they were built on. If your installed versions don't match
+> (different release, backports, a soname your distro doesn't ship), the tool won't start —
+> `error while loading shared libraries: libavutil.so.NN` / `liblept.so.N`. In that case,
+> **build from source** instead (below): a source build links against whatever you have.
+
+**From source** — `cargo install wlr-utils` (above) or the whole workspace; the OCR/video
+features link the system Tesseract/FFmpeg `-dev` packages (see each tool's README), and the
+`gpu` feature needs `libgbm-dev` at build time:
 
 ```sh
 cargo build --release            # builds all binaries

@@ -48,9 +48,12 @@ window or a monitor with a click.
 
 ## Requirements
 
-- A wlroots-based compositor exposing `ext-image-copy-capture-v1` with the output **and**
-  foreign-toplevel capture sources (the latter feeds the live window thumbnails),
-  `ext-foreign-toplevel-list-v1` and `wlr-layer-shell` (Sway ≥ 1.12 / wlroots ≥ 0.20).
+- A wlroots-based compositor exposing `ext-image-copy-capture-v1` and `wlr-layer-shell`.
+  Screen sources need the **output** source (**Sway ≥ 1.11 / wlroots ≥ 0.19**); live
+  **window** thumbnails and **`wlr-switcher`** additionally need the **foreign-toplevel**
+  source + `ext-foreign-toplevel-list-v1` (**Sway ≥ 1.12 / wlroots ≥ 0.20**). Below that,
+  `wlr-switcher` reports the missing window capture and exits. See
+  [COMPATIBILITY.md](../../COMPATIBILITY.md).
 - `xdg-desktop-portal-wlr` ≥ 0.8 (for the screencast chooser use).
 - For the **GPU path** (default): a working EGL/GLES driver and `libgbm`
   (ships with Mesa). It falls back to CPU automatically if unavailable.
