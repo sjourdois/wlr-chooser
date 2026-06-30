@@ -649,12 +649,16 @@ mod tests {
         };
 
         let (w, h, fps, n) = (320u32, 240u32, 30u32, 30u32);
-        // Unique per backend: tests run in parallel and would otherwise share a file.
-        let path = std::env::temp_dir().join(format!(
-            "wlr_capture_enc_{}_{}.mp4",
-            std::process::id(),
-            backend.codec_name()
-        ));
+        // A private (0600), randomly-named temp file, removed when `tmp` drops at the end
+        // of the test. The random name keeps parallel backends from sharing a file; the
+        // `.mp4` suffix lets FFmpeg infer the muxer. The encoder writes into the existing
+        // file, so its 0600 mode is preserved (no world-readable output in /tmp).
+        let tmp = tempfile::Builder::new()
+            .prefix("wlr_capture_enc_")
+            .suffix(".mp4")
+            .tempfile()
+            .expect("create temp output");
+        let path = tmp.path().to_path_buf();
         let mut enc = VideoEncoder::new(
             &path,
             Options {
@@ -701,7 +705,8 @@ mod tests {
             assert_eq!(fields, ["h264", "320", "240"], "ffprobe stream metadata");
         }
 
-        let _ = std::fs::remove_file(&path);
+        // `tmp` drops here, removing the file.
+        drop(tmp);
     }
 
     /// Software (libx264) path — the portable fallback.

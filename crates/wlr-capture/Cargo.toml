@@ -62,6 +62,10 @@ toml = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 fontdb = { workspace = true, optional = true }
 
+[dev-dependencies]
+# Private (0600), randomly-named, auto-removed temp output for the encoder round-trip test.
+tempfile = { workspace = true }
+
 [features]
 default = ["gpu", "toolkit", "i18n"]
 # Zero-copy GPU capture: allocate dma-bufs via gbm and import them as GL textures.

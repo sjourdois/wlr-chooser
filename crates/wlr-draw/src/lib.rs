@@ -64,6 +64,11 @@ enum Ctl {
         /// Width in logical pixels
         px: f32,
     },
+    /// Save the annotated screen to a PNG (default: ~/Pictures/wlr-draw-<stamp>.png)
+    Save {
+        /// Destination path; omit for a timestamped file in your Pictures directory
+        path: Option<String>,
+    },
     /// Stop the running daemon
     Quit,
 }
@@ -99,5 +104,6 @@ fn ctl_to_cmd(ctl: Ctl) -> anyhow::Result<Cmd> {
             parse_color(&value).ok_or_else(|| anyhow::anyhow!("unknown colour: {value}"))?,
         ),
         Ctl::Width { px } => Cmd::Width(px),
+        Ctl::Save { path } => Cmd::Save(path),
     })
 }
