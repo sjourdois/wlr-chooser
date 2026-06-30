@@ -59,6 +59,19 @@ Encoding & destination:
 - `FILE` — destination, or `-` for stdout (the default). Ignored with `--clipboard`.
 - `--list-outputs` — print `NAME<TAB>WxH+X,Y` (logical geometry) and exit.
 
+Because the default `FILE` is `-` (stdout), a screenshot pipes straight into an
+annotation editor — **no temp file**. Example **Sway** bindings sending each source
+to [satty](https://github.com/gabm/Satty), which saves the result to your Pictures
+directory:
+
+```sway
+set $pics "$(xdg-user-dir PICTURES)/screenshot-%+.png"
+bindsym Print               exec wlr-shot screenshot -s               - | satty -f - -o $pics
+bindsym Shift+Print         exec wlr-shot screenshot --active-window  - | satty -f - -o $pics
+bindsym Control+Print       exec wlr-shot screenshot --current-output - | satty -f - -o $pics
+bindsym Control+Shift+Print exec wlr-shot screenshot --all            - | satty -f - -o $pics
+```
+
 Resolution: a whole output, or a region within a **single** output, is captured at
 **native (physical) resolution** — so a fractionally-scaled monitor keeps full
 pixel detail. A region spanning **several** outputs is composited at logical
