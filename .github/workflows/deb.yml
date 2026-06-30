@@ -8,34 +8,83 @@ permissions:
   contents: write
 
 jobs:
-  deb:
+  # Build one .deb per distro, each inside that distro's own container so the binary
+  # links against *its* FFmpeg / Leptonica (sonames differ across releases) and
+  # cargo-deb's `$auto` (dpkg-shlibdeps) generates the matching `Depends:`. A .deb
+  # built on the wrong distro fails at load time with e.g. `liblept.so.5` /
+  # `libavutil.so.58` missing (issue #1).
+  build:
     runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: 'debian:bookworm-slim', codename: bookworm,    experimental: false }
+          - { image: 'debian:trixie-slim',   codename: trixie,      experimental: false }
+          - { image: 'debian:forky-slim',    codename: forky,       experimental: true  }
+          - { image: 'debian:sid-slim',      codename: sid,         experimental: true  }
+          - { image: 'ubuntu:22.04',         codename: jammy,       experimental: false }
+          - { image: 'ubuntu:24.04',         codename: noble,       experimental: false }
+          - { image: 'ubuntu:26.04',         codename: ubuntu2604,  experimental: true  }
+    continue-on-error: ${{ matrix.experimental }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install system dependencies
+      - name: Install build prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config clang \
             libwayland-dev libxkbcommon-dev libfontconfig-dev libgbm-dev \
-            clang libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev \
             libavdevice-dev libswscale-dev libswresample-dev libva-dev \
             libpipewire-0.3-dev libtesseract-dev libleptonica-dev libdbus-1-dev
+      - uses: actions/checkout@v4
+      - name: Install Rust (rustup, stable)
+        run: |
+          set -eux
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Install cargo-deb
-        run: cargo install cargo-deb
-      - name: Build the .deb package
-        # One bundle package shipping every binary (supersedes the old per-tool packages
-        # via conflicts/replaces). `cargo deb` builds the bundle's binaries first.
+        run: cargo install cargo-deb --locked
+      - name: Build the .deb (one bundle package with every binary)
         run: cargo deb -p wlr-utils
+      - name: Tag the artifact with its distro codename
+        run: |
+          set -eux
+          mkdir -p dist
+          for f in target/debian/*.deb; do
+            base="$(basename "$f" .deb)"
+            cp "$f" "dist/${base}.${{ matrix.codename }}.deb"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.codename }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # Collect every distro's .deb and attach them to the GitHub release. Runs on the
+  # host (not a container) so the `gh` CLI is available.
+  upload:
+    needs: build
+    if: ${{ always() && needs.build.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: dist
+          merge-multiple: true
       - name: Attach to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -eux
           tag="${GITHUB_REF_NAME}"
           # the cargo-dist release job creates the release; wait for it.
           for _ in $(seq 1 30); do
             gh release view "$tag" >/dev/null 2>&1 && break
             echo "waiting for release $tag…"; sleep 20
           done
-          gh release upload "$tag" target/debian/*.deb --clobber
+          gh release upload "$tag" dist/*.deb --clobber
