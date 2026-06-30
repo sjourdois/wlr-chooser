@@ -51,3 +51,8 @@ draw-tool-move = Sposta
 draw-help-freeze = Spazio: congela lo schermo per annotare
 draw-help-rightmove = trascina col destro: sposta un elemento
 draw-help-save = salva screenshot annotato
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Questo compositor non può catturare singole finestre. La cattura delle finestre richiede wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 offrono solo la cattura dello schermo. Esegui `wlr-peek doctor` per vedere cosa supporta il tuo compositor.
+draw-capture-unavailable = Cattura dello schermo non disponibile qui — congela e salva sono disattivati.

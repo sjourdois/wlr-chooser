@@ -51,3 +51,8 @@ draw-tool-move = Przesuń
 draw-help-freeze = Spacja: zamroź ekran, aby dodać adnotacje
 draw-help-rightmove = przeciągnij PPM: przesuń element
 draw-help-save = zapisz adnotowany zrzut ekranu
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Ten kompozytor nie może przechwytywać pojedynczych okien. Przechwytywanie okien wymaga wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 udostępniają tylko przechwytywanie ekranu. Uruchom `wlr-peek doctor`, aby zobaczyć, co obsługuje twój kompozytor.
+draw-capture-unavailable = Przechwytywanie ekranu niedostępne — zamrażanie i zapisywanie są wyłączone.

@@ -51,3 +51,8 @@ draw-tool-move = Verplaatsen
 draw-help-freeze = Spatie: scherm bevriezen om te annoteren
 draw-help-rightmove = rechts slepen: element verplaatsen
 draw-help-save = geannoteerde schermafbeelding opslaan
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Deze compositor kan geen losse vensters vastleggen. Venstervastlegging vereist wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 bieden alleen schermvastlegging. Voer `wlr-peek doctor` uit om te zien wat je compositor ondersteunt.
+draw-capture-unavailable = Schermvastlegging hier niet beschikbaar — bevriezen en opslaan zijn uitgeschakeld.

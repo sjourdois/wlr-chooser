@@ -58,3 +58,8 @@ tray-undo = Annuler
 tray-shortcuts = Raccourcis
 tray-quit = Quitter
 tray-autostart = Lancer au démarrage
+
+# Capacités de capture — dégradation gracieuse sur les compositeurs sans capture de
+# fenêtre (la source d'image foreign-toplevel ; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Ce compositeur ne peut pas capturer de fenêtres individuelles. La capture de fenêtre nécessite wlroots >= 0.20 (Sway >= 1.12) ; wlroots 0.19 / Sway 1.11 n'exposent que la capture d'écran. Lancez `wlr-peek doctor` pour voir ce que prend en charge votre compositeur.
+draw-capture-unavailable = Capture d'écran indisponible ici — geler et enregistrer sont désactivés.

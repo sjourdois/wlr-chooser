@@ -51,3 +51,8 @@ draw-tool-move = Переместить
 draw-help-freeze = Пробел: заморозить экран для аннотаций
 draw-help-rightmove = перетаскивание ПКМ: переместить элемент
 draw-help-save = сохранить аннотированный снимок
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Этот композитор не может захватывать отдельные окна. Захват окон требует wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 поддерживают только захват экрана. Запустите `wlr-peek doctor`, чтобы узнать, что поддерживает ваш композитор.
+draw-capture-unavailable = Захват экрана здесь недоступен — заморозка и сохранение отключены.

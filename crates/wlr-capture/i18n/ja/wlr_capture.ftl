@@ -51,3 +51,8 @@ draw-tool-move = 移動
 draw-help-freeze = Space: 画面を静止して注釈
 draw-help-rightmove = 右ドラッグ: 要素を移動
 draw-help-save = 注釈付きスクリーンショットを保存
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = このコンポジタは個別のウィンドウをキャプチャできません。ウィンドウキャプチャには wlroots >= 0.20 (Sway >= 1.12) が必要です。wlroots 0.19 / Sway 1.11 は画面キャプチャのみ対応しています。`wlr-peek doctor` を実行して、お使いのコンポジタが対応している機能を確認してください。
+draw-capture-unavailable = ここでは画面キャプチャを利用できません — 静止と保存は無効です。

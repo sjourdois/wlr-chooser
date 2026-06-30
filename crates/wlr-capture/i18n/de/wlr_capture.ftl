@@ -51,3 +51,8 @@ draw-tool-move = Verschieben
 draw-help-freeze = Leertaste: Bildschirm einfrieren zum Annotieren
 draw-help-rightmove = Rechtsziehen: Element verschieben
 draw-help-save = annotierten Screenshot speichern
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = Dieser Compositor kann keine einzelnen Fenster aufnehmen. Fensteraufnahme benötigt wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 bieten nur Bildschirmaufnahme. Führe `wlr-peek doctor` aus, um zu sehen, was dein Compositor unterstützt.
+draw-capture-unavailable = Bildschirmaufnahme hier nicht verfügbar — Einfrieren und Speichern sind deaktiviert.

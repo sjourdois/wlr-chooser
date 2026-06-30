@@ -51,3 +51,8 @@ draw-tool-move = 이동
 draw-help-freeze = Space: 화면을 정지하고 주석
 draw-help-rightmove = 오른쪽 드래그: 요소 이동
 draw-help-save = 주석 스크린샷 저장
+
+# Capture capability — graceful degradation on compositors without window
+# capture (foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = 이 컴포지터는 개별 창을 캡처할 수 없습니다. 창 캡처에는 wlroots >= 0.20 (Sway >= 1.12)이 필요합니다. wlroots 0.19 / Sway 1.11은 화면 캡처만 제공합니다. `wlr-peek doctor`를 실행하여 컴포지터가 지원하는 기능을 확인하세요.
+draw-capture-unavailable = 여기서는 화면 캡처를 사용할 수 없습니다 — 정지와 저장이 비활성화됩니다.

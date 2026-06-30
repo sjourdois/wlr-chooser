@@ -60,3 +60,8 @@ tray-undo = Undo
 tray-shortcuts = Shortcuts
 tray-quit = Quit
 tray-autostart = Start on login
+
+# Capture capability — graceful degradation on compositors without window capture
+# (the foreign-toplevel image-capture source; wlroots < 0.20 / Sway < 1.12).
+capture-no-window = This compositor cannot capture individual windows. Window capture needs wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / Sway 1.11 only expose screen capture. Run `wlr-peek doctor` to see what your compositor supports.
+draw-capture-unavailable = Screen capture unavailable here — freeze and save are disabled.
