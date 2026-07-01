@@ -138,6 +138,27 @@ After that first run the desktop file's presence is the sole source of truth: th
 **Start on login** checkbox writes or removes it, and unchecking it is permanent — a later
 manual launch won't recreate an entry you deliberately dropped.
 
+### Logs
+
+The daemon logs to stderr, which the session journals. Filter by the **binary name**, not
+the unit — it's clean and works however the daemon was started:
+
+```sh
+journalctl --user -t wlr-draw -f
+```
+
+(A default XDG-autostart launch shows up under the systemd unit `app-wlr\x2ddraw@…` — the
+`\x2d` is just systemd escaping the dash in the desktop-file name, which is awkward to
+type. `-t wlr-draw` sidesteps it. If you want a tidy unit name in the journal too, run the
+daemon from the systemd user unit below instead, and it appears as `wlr-draw.service`.)
+
+Restarting the autostart daemon (e.g. after installing a new build) uses that same escaped
+unit name — quote it so the shell keeps the backslash:
+
+```sh
+systemctl --user restart 'app-wlr\x2ddraw@autostart.service'
+```
+
 ### Tray icon
 
 With the `tray` feature (on by default) the daemon shows a StatusNotifierItem tray icon

@@ -1167,6 +1167,19 @@ pub fn run() -> anyhow::Result<()> {
     })
     .map_err(|e| anyhow::anyhow!("calloop channel source: {e}"))?;
 
+    // A startup line so `journalctl --user -t wlr-draw` shows the daemon came up (and its
+    // capture verdict) — otherwise the log stays silent until the first error.
+    eprintln!(
+        "wlr-draw: daemon ready on {} output{} (screen capture {})",
+        state.surfaces.len(),
+        if state.surfaces.len() == 1 { "" } else { "s" },
+        if state.capture_available {
+            "available"
+        } else {
+            "unavailable"
+        },
+    );
+
     while !state.quit {
         // Tick fast enough to animate: while a freehand stroke is in flight (dwell to
         // snap) or the status chip is pulsing, even when no input events arrive.
