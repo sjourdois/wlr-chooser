@@ -86,7 +86,9 @@ pub fn main() -> anyhow::Result<()> {
     match cli.cmd {
         None => overlay::run(),
         // Doctor probes the compositor directly — it doesn't drive the daemon.
-        Some(Ctl::Doctor) => wlr_capture::doctor::report().map_err(Into::into),
+        Some(Ctl::Doctor) => {
+            wlr_capture::doctor::report("wlr-draw", env!("CARGO_PKG_VERSION")).map_err(Into::into)
+        }
         Some(ctl) => ipc::send(&ctl_to_cmd(ctl)?),
     }
 }

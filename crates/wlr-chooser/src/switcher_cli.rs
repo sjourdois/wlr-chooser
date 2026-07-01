@@ -84,7 +84,7 @@ pub fn main() {
     i18n::init();
 
     if cli.doctor {
-        if let Err(e) = wlr_capture::doctor::report() {
+        if let Err(e) = wlr_capture::doctor::report("wlr-switcher", env!("CARGO_PKG_VERSION")) {
             eprintln!("wlr-switcher: {e}");
             std::process::exit(1);
         }

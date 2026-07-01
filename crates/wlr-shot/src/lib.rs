@@ -112,7 +112,9 @@ pub fn main() {
         Cmd::Screenshot(args) => screenshot(args),
         #[cfg(feature = "video")]
         Cmd::Record(args) => record(args),
-        Cmd::Doctor => wlr_capture::doctor::report().map_err(Into::into),
+        Cmd::Doctor => {
+            wlr_capture::doctor::report("wlr-shot", env!("CARGO_PKG_VERSION")).map_err(Into::into)
+        }
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {

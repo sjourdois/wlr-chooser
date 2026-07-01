@@ -95,7 +95,9 @@ pub fn main() {
         Cmd::Watch(args) => watch(args),
         #[cfg(feature = "ocr")]
         Cmd::Grep(args) => grep(args),
-        Cmd::Doctor => wlr_capture::doctor::report().map_err(Into::into),
+        Cmd::Doctor => {
+            wlr_capture::doctor::report("wlr-peek", env!("CARGO_PKG_VERSION")).map_err(Into::into)
+        }
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {

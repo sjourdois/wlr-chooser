@@ -10,9 +10,10 @@ and a `--doctor` flag on `wlr-chooser` / `wlr-switcher`:
 $ wlr-peek doctor
 ```
 
-It prints which of the protocols below the running compositor advertises, and
-whether screen capture and focus-aware sources will work. Any tool prints the same
-report, so a single-tool install can produce it too.
+It prints your tool version, OS, compositor + version, which of the protocols below
+the running compositor advertises, and whether screen capture and focus-aware sources
+will work — so it doubles as the environment block a bug report needs. Any tool prints
+the same report, so a single-tool install can produce it too.
 
 ## Protocols used
 
