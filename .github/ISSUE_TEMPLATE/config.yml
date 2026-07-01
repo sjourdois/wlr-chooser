@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Compatibility & doctor check
+    url: https://github.com/sjourdois/wlr-utils/blob/main/COMPATIBILITY.md
+    about: Before filing a capture/compatibility bug, check the compositor matrix and run any tool's `doctor` (e.g. `wlr-peek doctor`).
