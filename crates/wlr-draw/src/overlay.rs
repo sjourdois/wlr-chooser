@@ -1308,7 +1308,7 @@ fn paint(
 ) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let p = ui.painter();
             let off = egui::vec2(-lx, -ly);
 

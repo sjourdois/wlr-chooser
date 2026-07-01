@@ -140,7 +140,7 @@ impl Content {
         let tint = egui::Color32::from_white_alpha((opacity.clamp(0.0, 1.0) * 255.0) as u8);
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let p = ui.painter();
                 // The captured image, contained (letterboxed) in the tile. In region
                 // mode only `crop_uv` of the frame is shown, so the visible source

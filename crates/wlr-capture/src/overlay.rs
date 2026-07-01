@@ -179,7 +179,7 @@ fn draw_region_overlay(
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let p = ui.painter();
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
             if let Some(t) = tex {
@@ -284,7 +284,7 @@ fn draw_point_overlay(
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let p = ui.painter();
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
             if let Some(t) = tex {
@@ -413,7 +413,7 @@ fn draw_magnify_overlay(
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let p = ui.painter();
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
             let Some(t) = tex else { return };

@@ -1043,7 +1043,7 @@ impl App {
         let mut chosen = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 for (i, rect) in &rects {
                     let s = vis[*i];
                     let resp =
@@ -1233,7 +1233,7 @@ impl App {
         let mut hovered = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.painter().rect_filled(panel, 16.0, self.theme.card);
 
                 // Highlighted window's name, centred above the row.
