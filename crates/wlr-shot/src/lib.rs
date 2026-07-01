@@ -831,6 +831,30 @@ mod record_impl {
         );
         Ok(())
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::parse_interval;
+        use std::time::Duration;
+
+        #[test]
+        fn parse_interval_reads_units() {
+            assert_eq!(parse_interval("2s").unwrap(), Duration::from_millis(2000));
+            assert_eq!(parse_interval("500ms").unwrap(), Duration::from_millis(500));
+            assert_eq!(parse_interval("1m").unwrap(), Duration::from_millis(60_000));
+            assert_eq!(parse_interval("1.5s").unwrap(), Duration::from_millis(1500));
+            // A bare number is seconds.
+            assert_eq!(parse_interval("3").unwrap(), Duration::from_millis(3000));
+        }
+
+        #[test]
+        fn parse_interval_rejects_nonpositive_and_garbage() {
+            assert!(parse_interval("0s").is_err());
+            assert!(parse_interval("-1s").is_err());
+            assert!(parse_interval("abc").is_err());
+            assert!(parse_interval("").is_err());
+        }
+    }
 }
 
 #[cfg(feature = "video")]

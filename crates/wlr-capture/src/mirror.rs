@@ -1043,3 +1043,22 @@ pub fn capture_thread(source: stream::Source, mut sink: impl FnMut(PipMsg) -> bo
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{MIN_W, min_size_for};
+
+    #[test]
+    fn min_size_floors_width_and_derives_height_from_aspect() {
+        // Width is always the floor; height follows the aspect ratio.
+        assert_eq!(min_size_for(Some(1.0)), (MIN_W, MIN_W));
+        assert_eq!(min_size_for(Some(2.0)), (MIN_W, MIN_W / 2));
+        // Unknown aspect falls back to 16:9.
+        assert_eq!(min_size_for(None), (MIN_W, MIN_W * 9 / 16));
+        // A non-positive aspect is treated as unknown, not a divide-by-zero.
+        assert_eq!(min_size_for(Some(0.0)), min_size_for(None));
+        assert_eq!(min_size_for(Some(-3.0)), min_size_for(None));
+        // An extreme aspect never collapses height below 1px.
+        assert_eq!(min_size_for(Some(MIN_W as f32 * 4.0)).1, 1);
+    }
+}

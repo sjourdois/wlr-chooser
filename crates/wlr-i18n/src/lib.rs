@@ -55,14 +55,12 @@ pub mod build {
     use std::fmt::Write as _;
     use std::path::Path;
 
-    /// Parse a crate's `en` Fluent catalog (simple one-line `key = value` entries) into a
-    /// `fallback(id, args) -> String` function written to `$OUT_DIR/i18n_fallback.rs`,
-    /// substituting `{ $name }` placeables from `args`. Also re-runs when `i18n/` changes.
-    pub fn generate_fallback(en_catalog: &str) {
-        println!("cargo:rerun-if-changed=i18n");
-        let src = std::fs::read_to_string(en_catalog)
-            .unwrap_or_else(|e| panic!("reading {en_catalog}: {e}"));
-        let mut arms = String::new();
+    /// Parse a simple one-line `key = value` Fluent catalog into `(key, value)` pairs,
+    /// skipping blank lines and `#` comments. Everything after the first `=` is the value
+    /// (so `=` may appear in the text), and both sides are trimmed. This is the pure core
+    /// of [`generate_fallback`], split out so it can be tested without the filesystem.
+    fn parse_catalog(src: &str) -> Vec<(String, String)> {
+        let mut entries = Vec::new();
         for line in src.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -71,7 +69,21 @@ pub mod build {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
             };
-            writeln!(arms, "        {:?} => {:?},", key.trim(), value.trim()).unwrap();
+            entries.push((key.trim().to_string(), value.trim().to_string()));
+        }
+        entries
+    }
+
+    /// Parse a crate's `en` Fluent catalog (simple one-line `key = value` entries) into a
+    /// `fallback(id, args) -> String` function written to `$OUT_DIR/i18n_fallback.rs`,
+    /// substituting `{ $name }` placeables from `args`. Also re-runs when `i18n/` changes.
+    pub fn generate_fallback(en_catalog: &str) {
+        println!("cargo:rerun-if-changed=i18n");
+        let src = std::fs::read_to_string(en_catalog)
+            .unwrap_or_else(|e| panic!("reading {en_catalog}: {e}"));
+        let mut arms = String::new();
+        for (key, value) in parse_catalog(&src) {
+            writeln!(arms, "        {key:?} => {value:?},").unwrap();
         }
         let code = format!(
             "/// English fallback text generated from the `en` Fluent catalog.\n\
@@ -89,5 +101,39 @@ pub mod build {
         );
         let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("i18n_fallback.rs");
         std::fs::write(out, code).expect("writing i18n_fallback.rs");
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::parse_catalog;
+
+        #[test]
+        fn skips_blanks_and_comments_trims_and_keeps_equals_in_values() {
+            let src = "\
+# a leading comment
+greeting = Hello
+
+# spacer comment
+farewell = Bye now
+formula = a = b + c
+   indented  =  trimmed
+";
+            assert_eq!(
+                parse_catalog(src),
+                vec![
+                    ("greeting".to_string(), "Hello".to_string()),
+                    ("farewell".to_string(), "Bye now".to_string()),
+                    // Only the first `=` splits; the rest stays in the value.
+                    ("formula".to_string(), "a = b + c".to_string()),
+                    // Key and value are both trimmed.
+                    ("indented".to_string(), "trimmed".to_string()),
+                ]
+            );
+        }
+
+        #[test]
+        fn ignores_lines_without_an_equals() {
+            assert!(parse_catalog("no equals here\nanother line\n").is_empty());
+        }
     }
 }

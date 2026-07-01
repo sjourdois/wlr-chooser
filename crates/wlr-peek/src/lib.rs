@@ -503,9 +503,7 @@ fn pick_via_chooser() -> Option<String> {
 /// (keep it alive) or `None` if another mirror already owns it.
 fn mirror_lock(identifier: &str) -> Option<std::fs::File> {
     use rustix::fs::{FlockOperation, flock};
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
+    let dir = wlr_capture::paths::runtime_dir();
     let safe: String = identifier
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
@@ -870,6 +868,19 @@ fn focused_output() -> Result<String> {
         .with_context(|| format!("no focused output detected (via {})", backend.name()))
 }
 
+/// Screen- and window-capture support derived from the advertised globals, as
+/// `(screen, window)`. Screen capture needs the core copy-capture manager plus the
+/// output source (wlroots ≥ 0.19 / Sway ≥ 1.11); window capture additionally needs the
+/// foreign-toplevel source (wlroots ≥ 0.20 / Sway ≥ 1.12). This is the capability floor
+/// the whole suite keys off, so it lives in a pure function that can be tested directly.
+fn capture_verdict(globals: &[(String, u32)]) -> (bool, bool) {
+    let has = |iface: &str| globals.iter().any(|(n, _)| n == iface);
+    let screen = has("ext_image_copy_capture_manager_v1")
+        && has("ext_output_image_capture_source_manager_v1");
+    let window = has("ext_foreign_toplevel_image_capture_source_manager_v1");
+    (screen, window)
+}
+
 /// Report the capture-relevant Wayland globals the current compositor advertises,
 /// so users can tell at a glance whether (and how well) the suite will work here.
 fn doctor() -> Result<()> {
@@ -912,9 +923,7 @@ fn doctor() -> Result<()> {
         }
     }
 
-    let core = version("ext_image_copy_capture_manager_v1").is_some()
-        && version("ext_output_image_capture_source_manager_v1").is_some();
-    let window = version("ext_foreign_toplevel_image_capture_source_manager_v1").is_some();
+    let (core, window) = capture_verdict(&globals);
     println!();
     if core {
         println!(
@@ -1273,6 +1282,30 @@ mod watch_impl {
         }
         Ok(Duration::from_secs_f64(secs * mult))
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::parse_interval;
+        use std::time::Duration;
+
+        #[test]
+        fn parse_interval_reads_units() {
+            assert_eq!(parse_interval("2s").unwrap(), Duration::from_millis(2000));
+            assert_eq!(parse_interval("500ms").unwrap(), Duration::from_millis(500));
+            assert_eq!(parse_interval("1m").unwrap(), Duration::from_millis(60_000));
+            assert_eq!(parse_interval("1.5s").unwrap(), Duration::from_millis(1500));
+            // A bare number is seconds.
+            assert_eq!(parse_interval("3").unwrap(), Duration::from_millis(3000));
+        }
+
+        #[test]
+        fn parse_interval_rejects_nonpositive_and_garbage() {
+            assert!(parse_interval("0s").is_err());
+            assert!(parse_interval("-1s").is_err());
+            assert!(parse_interval("abc").is_err());
+            assert!(parse_interval("").is_err());
+        }
+    }
 }
 
 #[cfg(feature = "watch")]
@@ -1297,5 +1330,31 @@ mod tests {
         assert_eq!(clean_ocr(raw), "line one\n\nline two");
         assert_eq!(clean_ocr("solo\n\u{0c}"), "solo");
         assert_eq!(clean_ocr("   \n\n"), "");
+    }
+
+    fn globals(names: &[&str]) -> Vec<(String, u32)> {
+        names.iter().map(|n| ((*n).to_string(), 1)).collect()
+    }
+
+    #[test]
+    fn capture_verdict_reads_screen_and_window_floors() {
+        const CORE: [&str; 2] = [
+            "ext_image_copy_capture_manager_v1",
+            "ext_output_image_capture_source_manager_v1",
+        ];
+        const FOREIGN: &str = "ext_foreign_toplevel_image_capture_source_manager_v1";
+
+        // Nothing advertised → neither capture path works.
+        assert_eq!(capture_verdict(&globals(&[])), (false, false));
+        // Core copy-capture + output source → screen only (wlroots 0.19 / Sway 1.11).
+        assert_eq!(capture_verdict(&globals(&CORE)), (true, false));
+        // Add the foreign-toplevel source → window capture too (0.20 / 1.12).
+        let mut all = CORE.to_vec();
+        all.push(FOREIGN);
+        assert_eq!(capture_verdict(&globals(&all)), (true, true));
+        // Only one of the two core managers → screen still unsupported.
+        assert_eq!(capture_verdict(&globals(&CORE[..1])), (false, false));
+        // The screen and window verdicts are independent booleans, as doctor() prints them.
+        assert_eq!(capture_verdict(&globals(&[FOREIGN])), (false, true));
     }
 }

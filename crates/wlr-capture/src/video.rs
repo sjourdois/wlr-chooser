@@ -308,6 +308,16 @@ fn build_audio_stream(
     })
 }
 
+/// Round a source size down to even encoder dimensions (H.264 chroma is subsampled 2×2),
+/// or reject it as [`CaptureError::SourceTooSmall`] if either axis rounds down to zero.
+fn even_dst(sw: u32, sh: u32) -> Result<(u32, u32)> {
+    let dst = (sw & !1, sh & !1);
+    if dst.0 == 0 || dst.1 == 0 {
+        return Err(CaptureError::SourceTooSmall { w: sw, h: sh });
+    }
+    Ok(dst)
+}
+
 impl Pipeline {
     /// Build the output context + encoder for a source of size `(sw, sh)`.
     fn new(path: &Path, opts: &Options, sw: u32, sh: u32) -> Result<Self> {
@@ -316,11 +326,7 @@ impl Pipeline {
             CaptureError::msg(format!("encoder '{}' unavailable", backend.codec_name()))
         })?;
 
-        // Even dimensions (H.264 chroma is subsampled 2×2).
-        let dst = (sw & !1, sh & !1);
-        if dst.0 == 0 || dst.1 == 0 {
-            return Err(CaptureError::SourceTooSmall { w: sw, h: sh });
-        }
+        let dst = even_dst(sw, sh)?;
         // The encoder's input format, and the scaler's output. NVENC takes NV12 and
         // libx264 takes planar YUV420P, both CPU frames sent directly. VAAPI consumes
         // hardware (VAAPI) frames, so we scale to a CPU NV12 frame and upload it.
@@ -626,6 +632,17 @@ impl FrameSink for VideoEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn even_dst_rounds_down_and_rejects_zero() {
+        assert_eq!(even_dst(1920, 1080).unwrap(), (1920, 1080));
+        // Odd axes round down to even.
+        assert_eq!(even_dst(101, 51).unwrap(), (100, 50));
+        // A 1px axis rounds to zero → too small to encode.
+        assert!(even_dst(1, 4).is_err());
+        assert!(even_dst(4, 1).is_err());
+        assert!(even_dst(0, 0).is_err());
+    }
 
     /// A synthetic RGBA frame: a diagonal gradient shifted by `t` (so motion exists
     /// for the encoder to chew on).

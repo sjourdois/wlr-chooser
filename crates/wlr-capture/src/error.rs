@@ -129,3 +129,81 @@ impl<T> Context<T> for Option<T> {
         self.ok_or_else(|| CaptureError::msg(f()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(e: &CaptureError) -> Option<&(dyn StdError + 'static)> {
+        StdError::source(e)
+    }
+
+    #[test]
+    fn variant_display_text_is_stable() {
+        assert_eq!(
+            CaptureError::OutputNotFound("HDMI-1".into()).to_string(),
+            "output 'HDMI-1' not found"
+        );
+        assert_eq!(
+            CaptureError::WindowNotFound("42".into()).to_string(),
+            "window '42' not found"
+        );
+        assert_eq!(
+            CaptureError::InvalidGeometry("bad".into()).to_string(),
+            "invalid geometry 'bad' (expected 'X,Y WxH')"
+        );
+        assert!(
+            CaptureError::WindowsUnsupported
+                .to_string()
+                .contains("wlroots >= 0.20")
+        );
+    }
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn source_too_small_interpolates_dimensions() {
+        assert_eq!(
+            CaptureError::SourceTooSmall { w: 4, h: 2 }.to_string(),
+            "source too small to encode (4x2)"
+        );
+    }
+
+    #[test]
+    fn msg_is_a_backend_error_without_a_cause() {
+        let e = CaptureError::msg("boom");
+        assert_eq!(e.to_string(), "boom");
+        assert!(source(&e).is_none());
+    }
+
+    #[test]
+    fn context_on_result_wraps_and_preserves_the_cause() {
+        // A ParseIntError is a real StdError, so it flows into `Backend { source }`.
+        let e: CaptureError = "x".parse::<i32>().context("parsing width").unwrap_err();
+        assert_eq!(e.to_string(), "parsing width");
+        let cause = source(&e).expect("cause preserved");
+        assert!(cause.to_string().contains("invalid digit"));
+    }
+
+    #[test]
+    fn with_context_is_lazy_and_only_builds_on_error() {
+        let ok: Result<i32> = "1"
+            .parse::<i32>()
+            .with_context(|| -> String { unreachable!("not called on Ok") });
+        assert_eq!(ok.unwrap(), 1);
+
+        let e = "x"
+            .parse::<i32>()
+            .with_context(|| format!("ctx {}", 7))
+            .unwrap_err();
+        assert_eq!(e.to_string(), "ctx 7");
+    }
+
+    #[test]
+    fn context_on_option_maps_none_and_passes_some_through() {
+        let e = None::<i32>.context("missing thing").unwrap_err();
+        assert_eq!(e.to_string(), "missing thing");
+        assert!(source(&e).is_none());
+
+        assert_eq!(Some(5).context("unused").unwrap(), 5);
+    }
+}
