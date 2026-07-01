@@ -1360,6 +1360,16 @@ fn paint_shape(
     }
 }
 
+/// Arrowhead length for a shaft of `len` px drawn at stroke `width`: tied to the stroke
+/// width (so heads stay consistent), at least 10px for readability, but never more than
+/// 60% of the shaft so it can't dwarf a short arrow. On a very short arrow the 60% cap
+/// wins over the 10px floor — hence `cap.min(10.0)` as the lower bound, so the clamp never
+/// gets `min > max` (which panics).
+fn arrowhead_len(width: f32, len: f32) -> f32 {
+    let cap = 0.6 * len;
+    (width * 4.5).clamp(cap.min(10.0), cap)
+}
+
 /// Draw an arrow from `pa` to `pb`: a shaft plus an arrowhead whose size scales with the
 /// stroke `width` (not the arrow's length), so short and long arrows keep a consistent
 /// head.
@@ -1372,8 +1382,7 @@ fn draw_arrow(p: &egui::Painter, pa: egui::Pos2, pb: egui::Pos2, color: egui::Co
         return;
     }
     let dir = v / len;
-    // Head length tied to the stroke width, clamped so it never dwarfs a short arrow.
-    let head = (width * 4.5).clamp(10.0, 0.6 * len);
+    let head = arrowhead_len(width, len);
     let spread = 0.45_f32; // ~26° half-angle
     let (sin, cos) = spread.sin_cos();
     // Two barbs: -dir rotated by ±spread.
@@ -2347,3 +2356,24 @@ delegate_keyboard!(State);
 delegate_pointer!(State);
 delegate_layer!(State);
 delegate_registry!(State);
+
+#[cfg(test)]
+mod tests {
+    use super::arrowhead_len;
+
+    #[test]
+    fn arrowhead_never_panics_and_stays_within_the_shaft() {
+        // Regression: a short arrow (len < 16.67) made `0.6*len` fall below the 10px
+        // floor, so `clamp(10.0, 0.6*len)` panicked with min > max. The head must instead
+        // shrink to the 60% cap. `len ≈ 1.28` reproduces the original panic.
+        assert!((arrowhead_len(6.0, 1.276) - 0.6 * 1.276).abs() < 1e-4);
+        // The head never exceeds 60% of the shaft, whatever the width.
+        for &(w, len) in &[(1.0, 5.0), (6.0, 10.0), (200.0, 3.0), (2.0, 16.6)] {
+            let h = arrowhead_len(w, len);
+            assert!(h.is_finite() && h <= 0.6 * len + 1e-4, "w={w} len={len} h={h}");
+        }
+        // A normal arrow keeps the width-scaled head within [10, 60% len].
+        assert_eq!(arrowhead_len(6.0, 100.0), 27.0); // 6*4.5, within [10, 60]
+        assert_eq!(arrowhead_len(1.0, 100.0), 10.0); // 4.5 floored to 10
+    }
+}
