@@ -15,10 +15,7 @@ use std::path::PathBuf;
 
 /// Path of the per-user control socket.
 pub fn socket_path() -> PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    dir.join("wlr-draw.sock")
+    wlr_capture::paths::runtime_dir().join("wlr-draw.sock")
 }
 
 /// Whether a daemon is already accepting on the socket.

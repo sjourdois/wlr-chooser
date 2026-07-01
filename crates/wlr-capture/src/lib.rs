@@ -52,6 +52,7 @@ pub mod diff;
 pub mod error;
 pub mod gl;
 pub use error::CaptureError;
+pub mod paths;
 pub mod sink;
 pub mod stream;
 pub mod wl;
