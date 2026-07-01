@@ -12,8 +12,8 @@
 //! icon badge or close, and `Esc` to close. The tile keeps the source aspect
 //! ratio; collapsing shrinks it, and any new frame while collapsed restores it.
 
-use crate::render::{DmabufImporter, Gpu};
 use crate::error::{CaptureError, Context, Result};
+use crate::render::{DmabufImporter, Gpu};
 use crate::stream;
 use crate::theme::Theme;
 use crate::wl;
@@ -417,10 +417,8 @@ pub fn run_on(conn: &Connection, source: Source, config: Config) -> Result<()> {
         // calloop's `InsertError` isn't `Send + Sync`, so fold it into the message.
         .map_err(|e| CaptureError::msg(format!("calloop wayland source: {e}")))?;
 
-    let compositor =
-        CompositorState::bind(&globals, &qh).context("wl_compositor")?;
-    let xdg_shell =
-        XdgShell::bind(&globals, &qh).context("xdg-shell missing")?;
+    let compositor = CompositorState::bind(&globals, &qh).context("wl_compositor")?;
+    let xdg_shell = XdgShell::bind(&globals, &qh).context("xdg-shell missing")?;
 
     // Region mode fixes the window aspect to the region and starts at region × zoom,
     // showing only the region's sub-rectangle of the captured output. Toplevel mode

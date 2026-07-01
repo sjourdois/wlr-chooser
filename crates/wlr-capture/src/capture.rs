@@ -7,8 +7,8 @@
 //! feature because the multi-output path resamples with `image`; a headless recorder
 //! that only streams frames through [`sink`](crate::sink) doesn't pull it in.
 
-use crate::wl::{CapturedImage, Client, Frame, Output, Region};
 use crate::error::{CaptureError, Context, Result};
+use crate::wl::{CapturedImage, Client, Frame, Output, Region};
 use std::time::Duration;
 
 /// Default time to wait for a one-shot frame from a source.

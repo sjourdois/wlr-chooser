@@ -10,8 +10,8 @@
 //! Extension function pointers are loaded at runtime via `eglGetProcAddress`
 //! (edgefirst-egl has no typed bindings for these).
 
-use crate::wl;
 use crate::error::{CaptureError, Context, Result};
+use crate::wl;
 use edgefirst_egl as egl;
 use std::ffi::c_void;
 use std::os::fd::AsRawFd;
@@ -276,7 +276,9 @@ impl GpuReadback {
                 );
                 Ok(buf)
             } else {
-                Err(CaptureError::msg(format!("FBO de readback incomplet (0x{status:x})")))
+                Err(CaptureError::msg(format!(
+                    "FBO de readback incomplet (0x{status:x})"
+                )))
             };
 
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);

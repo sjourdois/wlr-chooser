@@ -14,11 +14,11 @@
 use crate::model::{Color, Tool};
 use crate::overlay::HelpRow;
 use crate::proto::Cmd;
+use crate::tr;
 use ksni::blocking::{Handle, TrayMethods};
 use ksni::menu::{StandardItem, SubMenu};
 use ksni::{Icon, MenuItem, ToolTip, Tray};
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
-use crate::tr;
 
 /// The tray model. `active`/`color`/`tool` mirror the overlay; `tx` feeds menu actions.
 /// `autostart` mirrors whether the XDG autostart entry exists (toggled from the menu,

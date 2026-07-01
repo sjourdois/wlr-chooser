@@ -17,9 +17,11 @@
 //! additionally takes single-key shortcuts (incl. `h` help, `c` colour picker) and text.
 
 use crate::ipc;
+use crate::keymap::{Action, Keymap, ModKind, Trigger};
 use crate::model;
 use crate::model::{Color, Document, Element, Recognized, ShapeKind, Tool, constrain, recognize};
 use crate::proto::Cmd;
+use crate::tr;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -49,10 +51,8 @@ use wayland_client::{
     globals::registry_queue_init,
     protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface},
 };
-use crate::keymap::{Action, Keymap, ModKind, Trigger};
 use wlr_capture::render::Gpu;
 use wlr_capture::theme::Theme;
-use crate::tr;
 use wlr_capture::{capture, wl};
 
 /// Default stroke colour and width before the user changes them.
@@ -1508,7 +1508,8 @@ fn paint_gesture(p: &egui::Painter, off: egui::Vec2, frame: &Frame) {
         }
         Gesture::SnapEllipse { center, circle } => {
             if let Some((gx, gy)) = frame.pointer {
-                let (rx, ry) = snap_radii(*center, (gx as f32, gy as f32), *circle || frame.constrain);
+                let (rx, ry) =
+                    snap_radii(*center, (gx as f32, gy as f32), *circle || frame.constrain);
                 paint_shape(
                     p,
                     off,
@@ -2079,14 +2080,23 @@ pub(crate) fn shortcut_rows(km: &Keymap, capture_available: bool) -> Vec<HelpRow
     ));
 
     rows.push(HelpRow::Group(tr!("draw-help-group-pointer")));
-    rows.push(HelpRow::Entry(tr!("draw-help-key-drag"), tr!("draw-help-draw")));
-    rows.push(HelpRow::Entry(tr!("draw-help-key-hold"), tr!("draw-help-snap")));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-drag"),
+        tr!("draw-help-draw"),
+    ));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-hold"),
+        tr!("draw-help-snap"),
+    ));
     rows.push(HelpRow::Entry(
         tr!("draw-help-key-rdrag"),
         tr!("draw-help-rightmove"),
     ));
     rows.push(HelpRow::Entry("↑↓←→".into(), tr!("draw-help-move")));
-    rows.push(HelpRow::Entry(tr!("draw-help-key-type"), tr!("draw-help-text")));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-type"),
+        tr!("draw-help-text"),
+    ));
     rows
 }
 
@@ -2531,7 +2541,10 @@ mod tests {
         // The head never exceeds 60% of the shaft, whatever the width.
         for &(w, len) in &[(1.0, 5.0), (6.0, 10.0), (200.0, 3.0), (2.0, 16.6)] {
             let h = arrowhead_len(w, len);
-            assert!(h.is_finite() && h <= 0.6 * len + 1e-4, "w={w} len={len} h={h}");
+            assert!(
+                h.is_finite() && h <= 0.6 * len + 1e-4,
+                "w={w} len={len} h={h}"
+            );
         }
         // A normal arrow keeps the width-scaled head within [10, 60% len].
         assert_eq!(arrowhead_len(6.0, 100.0), 27.0); // 6*4.5, within [10, 60]

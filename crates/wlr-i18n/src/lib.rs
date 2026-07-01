@@ -19,8 +19,8 @@
 mod runtime {
     pub use i18n_embed::I18nAssets;
     pub use i18n_embed::fluent::FluentLanguageLoader;
-    pub use rust_embed;
     use i18n_embed::{DesktopLanguageRequester, LanguageLoader};
+    pub use rust_embed;
 
     /// Build a Fluent loader for `domain` (the catalog stem, e.g. `wlr_draw`) with English
     /// as the fallback language, preloading the `en` catalog from `assets`. Use it to

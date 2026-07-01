@@ -8,10 +8,10 @@
 //! `wlr-switcher` binary.
 
 use crate::ui::{self, Live, Mode, Options, View};
+use crate::{i18n, tr};
 use crate::{parse_grid, run_overlay};
 use clap::Parser;
 use std::time::Instant;
-use crate::{i18n, tr};
 
 /// Graphical window & screen picker for xdg-desktop-portal-wlr.
 ///

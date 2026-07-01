@@ -133,11 +133,8 @@ fn pw_loop(
 ) -> Result<()> {
     pw::init();
     let mainloop = pw::main_loop::MainLoopRc::new(None).context("main loop")?;
-    let context =
-        pw::context::ContextRc::new(&mainloop, None).context("context")?;
-    let core = context
-        .connect_rc(None)
-        .context("connect")?;
+    let context = pw::context::ContextRc::new(&mainloop, None).context("context")?;
+    let core = context.connect_rc(None).context("connect")?;
 
     let mut props = properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
@@ -154,8 +151,7 @@ fn pw_loop(
         }
     }
 
-    let stream = pw::stream::StreamBox::new(&core, "wlr-shot-audio", props)
-        .context("stream")?;
+    let stream = pw::stream::StreamBox::new(&core, "wlr-shot-audio", props).context("stream")?;
 
     let pcm_cb = pcm.clone();
     let _listener = stream
@@ -197,7 +193,8 @@ fn pw_loop(
     .context("POD serialize")?
     .0
     .into_inner();
-    let mut params = [Pod::from_bytes(&values).ok_or_else(|| CaptureError::msg("invalid format POD"))?];
+    let mut params =
+        [Pod::from_bytes(&values).ok_or_else(|| CaptureError::msg("invalid format POD"))?];
 
     stream
         .connect(
@@ -309,7 +306,9 @@ mod fallback {
             let name = std::ffi::CString::new(format).context("device format name")?;
             let p = ffmpeg::ffi::av_find_input_format(name.as_ptr());
             if p.is_null() {
-                return Err(CaptureError::msg(format!("input '{format}' not available in this FFmpeg build")));
+                return Err(CaptureError::msg(format!(
+                    "input '{format}' not available in this FFmpeg build"
+                )));
             }
             ffmpeg::format::format::Input::wrap(p as *mut _)
         };
@@ -318,13 +317,19 @@ mod fallback {
                 .map_err(|e| CaptureError::msg(format!("opening {format} '{device}': {e}")))?
             {
                 ffmpeg::format::context::Context::Input(i) => i,
-                _ => return Err(CaptureError::msg(format!("{format} '{device}' is not an input"))),
+                _ => {
+                    return Err(CaptureError::msg(format!(
+                        "{format} '{device}' is not an input"
+                    )));
+                }
             };
 
         let stream = ictx
             .streams()
             .best(ffmpeg::media::Type::Audio)
-            .ok_or_else(|| CaptureError::msg(format!("no audio stream from {format} '{device}'")))?;
+            .ok_or_else(|| {
+                CaptureError::msg(format!("no audio stream from {format} '{device}'"))
+            })?;
         let stream_index = stream.index();
         let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
             .context("decoder from stream parameters")?
@@ -332,7 +337,9 @@ mod fallback {
             .audio()
             .context("audio decoder")?;
 
-        ready.send(Ok(())).map_err(|_| CaptureError::msg("ready signal"))?;
+        ready
+            .send(Ok(()))
+            .map_err(|_| CaptureError::msg("ready signal"))?;
 
         let mut resampler: Option<ffmpeg::software::resampling::Context> = None;
         let mut frame = ffmpeg::frame::Audio::empty();
@@ -355,15 +362,17 @@ mod fallback {
                 let in_layout =
                     ffmpeg::channel_layout::ChannelLayout::default(frame.channels().max(1) as i32);
                 if resampler.is_none() {
-                    resampler = Some(ffmpeg::software::resampling::Context::get(
-                        frame.format(),
-                        in_layout,
-                        frame.rate(),
-                        ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
-                        ffmpeg::channel_layout::ChannelLayout::STEREO,
-                        RATE,
-                    )
-                    .context("building the audio resampler")?);
+                    resampler = Some(
+                        ffmpeg::software::resampling::Context::get(
+                            frame.format(),
+                            in_layout,
+                            frame.rate(),
+                            ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
+                            ffmpeg::channel_layout::ChannelLayout::STEREO,
+                            RATE,
+                        )
+                        .context("building the audio resampler")?,
+                    );
                 }
                 frame.set_channel_layout(in_layout);
                 resampler

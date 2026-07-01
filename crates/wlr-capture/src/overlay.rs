@@ -7,9 +7,9 @@
 //! overlay — one surface (and GL context) per output.
 
 use crate::capture::OutputCapture;
+use crate::error::{CaptureError, Context, Result};
 use crate::render::Gpu;
 use crate::wl::Region;
-use crate::error::{CaptureError, Context, Result};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -598,10 +598,8 @@ fn run(
     let (globals, mut queue) = registry_queue_init(conn).context("Wayland registry")?;
     let qh = queue.handle();
 
-    let compositor =
-        CompositorState::bind(&globals, &qh).context("wl_compositor")?;
-    let layer_shell =
-        LayerShell::bind(&globals, &qh).context("layer-shell missing")?;
+    let compositor = CompositorState::bind(&globals, &qh).context("wl_compositor")?;
+    let layer_shell = LayerShell::bind(&globals, &qh).context("layer-shell missing")?;
 
     let mut state = State {
         registry_state: RegistryState::new(&globals),
@@ -675,7 +673,9 @@ fn run(
     }
 
     while !state.done {
-        queue.blocking_dispatch(&mut state).context("Wayland dispatch")?;
+        queue
+            .blocking_dispatch(&mut state)
+            .context("Wayland dispatch")?;
         if state.dirty {
             state.dirty = false;
             state.redraw_all(conn);

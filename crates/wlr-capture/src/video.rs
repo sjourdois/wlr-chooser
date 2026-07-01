@@ -14,9 +14,9 @@
 //! The pipeline is initialised lazily on the first frame, so the encoder learns its
 //! dimensions from the stream — the caller doesn't have to know them in advance.
 
+use crate::error::{CaptureError, Context, Result};
 use crate::sink::FrameSink;
 use crate::wl::CapturedImage;
-use crate::error::{CaptureError, Context, Result};
 use ffmpeg::format::Pixel;
 use ffmpeg_next as ffmpeg;
 use std::path::{Path, PathBuf};
@@ -178,7 +178,9 @@ impl VaapiCtx {
             if r < 0 {
                 let name =
                     device.map_or_else(|| "(default)".to_string(), |p| p.display().to_string());
-                return Err(CaptureError::msg(format!("opening VAAPI device {name} (code {r})")));
+                return Err(CaptureError::msg(format!(
+                    "opening VAAPI device {name} (code {r})"
+                )));
             }
 
             let frames = ffi::av_hwframe_ctx_alloc(dev);
@@ -198,7 +200,9 @@ impl VaapiCtx {
                 let mut frames = frames;
                 ffi::av_buffer_unref(&mut frames);
                 ffi::av_buffer_unref(&mut dev);
-                return Err(CaptureError::msg(format!("initialising the VAAPI frame pool (code {r})")));
+                return Err(CaptureError::msg(format!(
+                    "initialising the VAAPI frame pool (code {r})"
+                )));
             }
             Ok(Self {
                 device: dev,
@@ -308,8 +312,9 @@ impl Pipeline {
     /// Build the output context + encoder for a source of size `(sw, sh)`.
     fn new(path: &Path, opts: &Options, sw: u32, sh: u32) -> Result<Self> {
         let backend = resolve_backend(opts.backend)?;
-        let codec = ffmpeg::encoder::find_by_name(backend.codec_name())
-            .ok_or_else(|| CaptureError::msg(format!("encoder '{}' unavailable", backend.codec_name())))?;
+        let codec = ffmpeg::encoder::find_by_name(backend.codec_name()).ok_or_else(|| {
+            CaptureError::msg(format!("encoder '{}' unavailable", backend.codec_name()))
+        })?;
 
         // Even dimensions (H.264 chroma is subsampled 2×2).
         let dst = (sw & !1, sh & !1);
@@ -459,11 +464,15 @@ impl Pipeline {
             unsafe {
                 let r = ffmpeg::ffi::av_hwframe_get_buffer(vaapi.frames, hw.as_mut_ptr(), 0);
                 if r < 0 {
-                    return Err(CaptureError::msg(format!("allocating a VAAPI surface (code {r})")));
+                    return Err(CaptureError::msg(format!(
+                        "allocating a VAAPI surface (code {r})"
+                    )));
                 }
                 let r = ffmpeg::ffi::av_hwframe_transfer_data(hw.as_mut_ptr(), dst.as_ptr(), 0);
                 if r < 0 {
-                    return Err(CaptureError::msg(format!("uploading the frame to the GPU (code {r})")));
+                    return Err(CaptureError::msg(format!(
+                        "uploading the frame to the GPU (code {r})"
+                    )));
                 }
             }
             hw.set_pts(Some(pts));

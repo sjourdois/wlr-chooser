@@ -189,7 +189,8 @@ fn clipboard_copy(mime: &str, bytes: Vec<u8>, foreground: bool) -> Result<()> {
     if foreground {
         return wlr_capture::clipboard::serve(mime, bytes).map_err(Into::into);
     }
-    wlr_capture::clipboard::spawn_detached(&bytes, &["clipboard-serve", "--mime", mime]).map_err(Into::into)
+    wlr_capture::clipboard::spawn_detached(&bytes, &["clipboard-serve", "--mime", mime])
+        .map_err(Into::into)
 }
 
 /// The `clipboard-serve` daemon body: read the blob from stdin, then serve it.
@@ -395,7 +396,8 @@ mod record_impl {
             let Some((w, h)) = self.dims else {
                 return Ok(());
             };
-            let mut config = webp::WebPConfig::new().map_err(|_| CaptureError::msg("WebP config"))?;
+            let mut config =
+                webp::WebPConfig::new().map_err(|_| CaptureError::msg("WebP config"))?;
             config.quality = 75.0;
             let mut enc = webp::AnimEncoder::new(w, h, &config);
             let step = (1000.0 / self.fps as f64).round() as i32;
@@ -621,7 +623,11 @@ mod record_impl {
             // Overlay connection before capture — see `screenshot -s` for why (EGL).
             let conn = wlr_capture::Connection::connect_to_env()?;
             let caps = capture::capture_all(client, capture::DEFAULT_BUDGET)?;
-            match wlr_capture::overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
+            match wlr_capture::overlay::select_region_on(
+                &conn,
+                &caps,
+                &crate::tr!("overlay-region-hint"),
+            )? {
                 Some(region) => region_target(client, region),
                 None => std::process::exit(1), // cancelled
             }

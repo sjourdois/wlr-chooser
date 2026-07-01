@@ -638,7 +638,9 @@ impl Client {
     /// Drain pending Wayland events (new/closed toplevels, etc.) without blocking
     /// on a capture, so the source list stays current between capture rounds.
     pub fn refresh(&mut self) -> Result<()> {
-        self.queue.roundtrip(&mut self.state).context("Wayland roundtrip")?;
+        self.queue
+            .roundtrip(&mut self.state)
+            .context("Wayland roundtrip")?;
         Ok(())
     }
 
@@ -680,7 +682,9 @@ impl Client {
 
         // Wait for the first buffer-constraints group (buffer_size + shm_format + done).
         loop {
-            self.queue.blocking_dispatch(&mut self.state).context("Wayland dispatch")?;
+            self.queue
+                .blocking_dispatch(&mut self.state)
+                .context("Wayland dispatch")?;
             let d = self.state.sessions.get(&id).unwrap();
             if d.constraints_done || d.stopped {
                 break;
@@ -690,7 +694,9 @@ impl Client {
             self.state.sessions.remove(&id);
             session.destroy();
             src.destroy();
-            return Err(CaptureError::msg("capture session stopped before first frame"));
+            return Err(CaptureError::msg(
+                "capture session stopped before first frame",
+            ));
         }
 
         self.open.insert(
@@ -753,7 +759,9 @@ impl Client {
                 }
             }
             if stopped.iter().any(|s| s == id) {
-                return Err(CaptureError::msg("capture: session stopped before first frame"));
+                return Err(CaptureError::msg(
+                    "capture: session stopped before first frame",
+                ));
             }
         }
     }
@@ -851,7 +859,9 @@ impl Client {
     /// goes quiet. Mirrors the crate's `blocking_read` but with a `poll` timeout
     /// so a desktop with no damage doesn't block us forever.
     fn dispatch_timeout(&mut self, budget: Duration) -> Result<()> {
-        self.queue.dispatch_pending(&mut self.state).context("Wayland dispatch")?;
+        self.queue
+            .dispatch_pending(&mut self.state)
+            .context("Wayland dispatch")?;
         self.queue.flush().context("Wayland flush")?;
         let deadline = Instant::now() + budget;
         loop {
@@ -861,7 +871,9 @@ impl Client {
             }
             let Some(guard) = self.queue.prepare_read() else {
                 // Events already queued: dispatch them and re-check.
-                self.queue.dispatch_pending(&mut self.state).context("Wayland dispatch")?;
+                self.queue
+                    .dispatch_pending(&mut self.state)
+                    .context("Wayland dispatch")?;
                 continue;
             };
             let ts = Timespec {
@@ -879,7 +891,9 @@ impl Client {
                 Ok(0) => break, // timeout: no events within the budget
                 Ok(_) => {
                     guard.read().context("reading Wayland events")?;
-                    self.queue.dispatch_pending(&mut self.state).context("Wayland dispatch")?;
+                    self.queue
+                        .dispatch_pending(&mut self.state)
+                        .context("Wayland dispatch")?;
                 }
                 Err(rustix::io::Errno::INTR) => continue,
                 Err(e) => return Err(CaptureError::msg(format!("poll: {e}"))),

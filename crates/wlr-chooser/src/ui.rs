@@ -4,13 +4,13 @@
 //! in. Toplevel capture is occlusion-independent, so showing our own window
 //! first is fine.
 
+use crate::tr;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wlr_capture::render::DmabufImporter;
 use wlr_capture::theme::Theme;
-use crate::tr;
 use wlr_capture::{icons, wl};
 
 /// Shared slot where the chosen source lands; read by `main` after the window closes.

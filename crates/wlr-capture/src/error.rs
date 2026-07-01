@@ -16,7 +16,9 @@ use thiserror::Error;
 pub enum CaptureError {
     /// The compositor can't capture individual windows: no foreign-toplevel image-capture
     /// source (wlroots < 0.20 / Sway < 1.12). Screen capture may still work.
-    #[error("this compositor cannot capture individual windows (needs wlroots >= 0.20 / Sway >= 1.12)")]
+    #[error(
+        "this compositor cannot capture individual windows (needs wlroots >= 0.20 / Sway >= 1.12)"
+    )]
     WindowsUnsupported,
 
     /// No outputs are available to capture.
@@ -127,4 +129,3 @@ impl<T> Context<T> for Option<T> {
         self.ok_or_else(|| CaptureError::msg(f()))
     }
 }
-

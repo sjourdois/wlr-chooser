@@ -117,7 +117,8 @@ fn color(args: ColorArgs) -> Result<()> {
     // Freeze every output, let the user aim and click a pixel on the loupe overlay,
     // then read that pixel back from the very same frozen capture.
     let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-    let Some((x, y)) = overlay::pick_point_on(&conn, &caps, &crate::tr!("overlay-pick-hint"))? else {
+    let Some((x, y)) = overlay::pick_point_on(&conn, &caps, &crate::tr!("overlay-pick-hint"))?
+    else {
         std::process::exit(1); // cancelled
     };
 
@@ -251,10 +252,11 @@ fn mirror(args: MirrorArgs) -> Result<()> {
         let mut client = wl::Client::connect().context("Wayland connection")?;
         client.refresh().ok();
         let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-        let region = match overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
-            Some(r) => r,
-            None => std::process::exit(1), // cancelled
-        };
+        let region =
+            match overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
+                Some(r) => r,
+                None => std::process::exit(1), // cancelled
+            };
         let (source, config) = build_source(&client, region, args.zoom, args.follow)?;
         return wlr_capture::mirror::run_on(&conn, source, config).map_err(Into::into);
     }
@@ -282,7 +284,7 @@ fn mirror(args: MirrorArgs) -> Result<()> {
             label,
             icon,
             relaunch: vec!["mirror".to_string()],
-                    loading: crate::tr!("loading"),
+            loading: crate::tr!("loading"),
             source_gone: crate::tr!("pip-gone"),
         },
     )
@@ -415,7 +417,7 @@ fn region_window_source(
             label,
             icon: None,
             relaunch: vec![],
-                    loading: crate::tr!("loading"),
+            loading: crate::tr!("loading"),
             source_gone: crate::tr!("pip-gone"),
         },
     )))
@@ -470,7 +472,7 @@ fn region_source(
             label: format!("{},{} {}×{}", region.x, region.y, region.w, region.h),
             icon: None,
             relaunch: vec![], // no re-pick in region mode
-                    loading: crate::tr!("loading"),
+            loading: crate::tr!("loading"),
             source_gone: crate::tr!("pip-gone"),
         },
     ))
@@ -562,7 +564,8 @@ fn copy_text(text: String, foreground: bool) -> Result<()> {
     if foreground {
         return wlr_capture::clipboard::serve(MIME, text.into_bytes()).map_err(Into::into);
     }
-    wlr_capture::clipboard::spawn_detached(text.as_bytes(), &["clipboard-serve", "--mime", MIME]).map_err(Into::into)
+    wlr_capture::clipboard::spawn_detached(text.as_bytes(), &["clipboard-serve", "--mime", MIME])
+        .map_err(Into::into)
 }
 
 #[cfg(feature = "ocr")]
@@ -613,13 +616,15 @@ fn ocr(args: OcrArgs) -> Result<()> {
 #[cfg(feature = "ocr")]
 fn ocr_source(client: &mut wl::Client, args: &OcrArgs) -> Result<wl::CapturedImage> {
     if let Some(geo) = &args.geometry {
-        capture::capture_region(client, capture::parse_geometry(geo)?, DEFAULT_BUDGET).map_err(Into::into)
+        capture::capture_region(client, capture::parse_geometry(geo)?, DEFAULT_BUDGET)
+            .map_err(Into::into)
     } else if let Some(name) = &args.output {
         capture::capture_output(client, Some(name), DEFAULT_BUDGET).map_err(Into::into)
     } else if args.active_window {
         capture::capture_region(client, active_window_rect()?, DEFAULT_BUDGET).map_err(Into::into)
     } else if args.current_output {
-        capture::capture_output(client, Some(&focused_output()?), DEFAULT_BUDGET).map_err(Into::into)
+        capture::capture_output(client, Some(&focused_output()?), DEFAULT_BUDGET)
+            .map_err(Into::into)
     } else {
         // Default (no source flag): freeze, let the user drag a region.
         let caps = capture::capture_all(client, DEFAULT_BUDGET)?;
@@ -912,7 +917,9 @@ fn doctor() -> Result<()> {
     let window = version("ext_foreign_toplevel_image_capture_source_manager_v1").is_some();
     println!();
     if core {
-        println!("Screen capture: supported (screenshots, recording, loupe, colour picker, wlr-draw).");
+        println!(
+            "Screen capture: supported (screenshots, recording, loupe, colour picker, wlr-draw)."
+        );
     } else {
         println!(
             "Screen capture: UNSUPPORTED — needs ext-image-copy-capture-v1 + the output \
@@ -920,7 +927,9 @@ fn doctor() -> Result<()> {
         );
     }
     if window {
-        println!("Window capture: supported (wlr-switcher, -w/--pick-window, window mirror/record).");
+        println!(
+            "Window capture: supported (wlr-switcher, -w/--pick-window, window mirror/record)."
+        );
     } else {
         println!(
             "Window capture: UNSUPPORTED — needs the foreign-toplevel source \
