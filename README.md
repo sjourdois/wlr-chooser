@@ -95,7 +95,10 @@ one matching your system:
 | Debian 12 (bookworm) | `…_amd64.bookworm.deb` |
 | Debian 13 (trixie) | `…_amd64.trixie.deb` |
 | Debian 14 (forky) / sid | `…_amd64.forky.deb` / `…_amd64.sid.deb` |
-| Ubuntu 22.04 / 24.04 / 26.04 | `…_amd64.noble.deb`, etc. |
+| Ubuntu 24.04 (noble) / 26.04 | `…_amd64.noble.deb` / `…_amd64.ubuntu2604.deb` |
+
+Ubuntu 22.04 has no `.deb` (its PipeWire is too old for the audio engine); install it with
+`cargo install wlr-utils` or the prebuilt tarball / installer above.
 
 > [!IMPORTANT]
 > These `.deb`s link **dynamically** against the FFmpeg (`libavutil`) and Leptonica

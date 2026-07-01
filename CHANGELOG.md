@@ -27,7 +27,7 @@ All notable changes to this project are documented here. The format is based on
 
 - **`wlr-draw save`** — paths containing spaces are no longer truncated (#3).
 - **`wlr-draw`** — a very short arrow no longer panics while sizing its head.
-- **Debian / Ubuntu `.deb`** — now built per distro (Debian 12–sid, Ubuntu 22.04–26.04) so
+- **Debian / Ubuntu `.deb`** — now built per distro (Debian 12–sid, Ubuntu 24.04–26.04) so
   it links against that distro's FFmpeg / Leptonica; fixes `liblept.so.5` / `libavutil.so.58`
   load failures on Debian 13 (#1).
 - **`wlr-peek doctor`** — verdicts reflect the two capture floors (screen 0.19/1.11,

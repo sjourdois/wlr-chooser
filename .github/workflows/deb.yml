@@ -24,7 +24,9 @@ jobs:
           - { image: 'debian:trixie-slim',   codename: trixie,      experimental: false }
           - { image: 'debian:forky-slim',    codename: forky,       experimental: true  }
           - { image: 'debian:sid-slim',      codename: sid,         experimental: true  }
-          - { image: 'ubuntu:22.04',         codename: jammy,       experimental: false }
+          # Ubuntu 22.04 (jammy) is intentionally excluded: its PipeWire is too old for
+          # the `libspa` crate the `audio` feature needs (missing spa_meta_* symbols), so
+          # the build can't link. 22.04 users install via `cargo install` or the tarball.
           - { image: 'ubuntu:24.04',         codename: noble,       experimental: false }
           - { image: 'ubuntu:26.04',         codename: ubuntu2604,  experimental: true  }
     continue-on-error: ${{ matrix.experimental }}
@@ -79,6 +81,9 @@ jobs:
       - name: Attach to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so `gh` can't infer the repo from git; name it
+          # explicitly, otherwise every `gh release …` fails with "not a git repository".
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eux
           tag="${GITHUB_REF_NAME}"
