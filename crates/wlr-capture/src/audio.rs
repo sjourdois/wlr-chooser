@@ -10,7 +10,7 @@
 //! (via FFmpeg's libavdevice) for the rare PipeWire-less host. `WLR_SHOT_AUDIO_BACKEND`
 //! (`pipewire`/`pulse`/`alsa`) forces one, mainly for testing.
 
-use anyhow::{Result, anyhow, bail};
+use crate::error::{CaptureError, Context, Result};
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
@@ -70,7 +70,7 @@ impl AudioCapture {
                 }
             }
         }
-        bail!("no audio backend available: {}", tried.join("; "))
+        Err(CaptureError::NoAudioBackend)
     }
 
     /// Native PipeWire capture (always built).
@@ -86,7 +86,8 @@ impl AudioCapture {
                 if let Err(e) = pw_loop(pcm_thread, target, &ready_tx) {
                     let _ = ready_tx.send(Err(e.to_string()));
                 }
-            })?;
+            })
+            .context("spawning the audio capture thread")?;
 
         match ready_rx.recv() {
             Ok(Ok(stop)) => Ok(Self {
@@ -96,9 +97,9 @@ impl AudioCapture {
             }),
             Ok(Err(e)) => {
                 let _ = thread.join();
-                Err(anyhow!("{e}"))
+                Err(CaptureError::msg(e.to_string()))
             }
-            Err(_) => Err(anyhow!("thread exited during setup")),
+            Err(_) => Err(CaptureError::msg("thread exited during setup")),
         }
     }
 
@@ -131,12 +132,9 @@ fn pw_loop(
     ready: &mpsc::Sender<Result<pw::channel::Sender<()>, String>>,
 ) -> Result<()> {
     pw::init();
-    let mainloop = pw::main_loop::MainLoopRc::new(None).map_err(|e| anyhow!("main loop: {e}"))?;
-    let context =
-        pw::context::ContextRc::new(&mainloop, None).map_err(|e| anyhow!("context: {e}"))?;
-    let core = context
-        .connect_rc(None)
-        .map_err(|e| anyhow!("connect: {e}"))?;
+    let mainloop = pw::main_loop::MainLoopRc::new(None).context("main loop")?;
+    let context = pw::context::ContextRc::new(&mainloop, None).context("context")?;
+    let core = context.connect_rc(None).context("connect")?;
 
     let mut props = properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
@@ -153,8 +151,7 @@ fn pw_loop(
         }
     }
 
-    let stream = pw::stream::StreamBox::new(&core, "wlr-shot-audio", props)
-        .map_err(|e| anyhow!("stream: {e}"))?;
+    let stream = pw::stream::StreamBox::new(&core, "wlr-shot-audio", props).context("stream")?;
 
     let pcm_cb = pcm.clone();
     let _listener = stream
@@ -177,7 +174,7 @@ fn pw_loop(
             }
         })
         .register()
-        .map_err(|e| anyhow!("listener: {e}"))?;
+        .context("listener")?;
 
     // Ask for 48 kHz stereo F32LE; PipeWire's adapter resamples/remixes to match.
     let mut audio_info = spa::param::audio::AudioInfoRaw::new();
@@ -193,10 +190,11 @@ fn pw_loop(
         std::io::Cursor::new(Vec::new()),
         &pw::spa::pod::Value::Object(obj),
     )
-    .map_err(|e| anyhow!("POD serialize: {e}"))?
+    .context("POD serialize")?
     .0
     .into_inner();
-    let mut params = [Pod::from_bytes(&values).ok_or_else(|| anyhow!("invalid format POD"))?];
+    let mut params =
+        [Pod::from_bytes(&values).ok_or_else(|| CaptureError::msg("invalid format POD"))?];
 
     stream
         .connect(
@@ -207,7 +205,7 @@ fn pw_loop(
                 | pw::stream::StreamFlags::RT_PROCESS,
             &mut params,
         )
-        .map_err(|e| anyhow!("connect stream: {e}"))?;
+        .context("connect stream")?;
 
     // A message on this channel quits the loop (sent by `AudioCapture::drop`).
     let (stop_tx, stop_rx) = pw::channel::channel::<()>();
@@ -216,7 +214,7 @@ fn pw_loop(
 
     ready
         .send(Ok(stop_tx))
-        .map_err(|_| anyhow!("handing back the stop channel"))?;
+        .map_err(|_| CaptureError::msg("handing back the stop channel"))?;
     mainloop.run();
     Ok(())
 }
@@ -225,7 +223,7 @@ fn pw_loop(
 #[cfg(feature = "audio-fallback")]
 mod fallback {
     use super::{CHANNELS, RATE};
-    use anyhow::{Result, anyhow, bail};
+    use crate::error::{CaptureError, Context, Result};
     use ffmpeg_next as ffmpeg;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -273,7 +271,8 @@ mod fallback {
                             eprintln!("wlr-shot: audio capture stopped: {e}");
                         }
                     }
-                })?;
+                })
+                .context("spawning the audio capture thread")?;
 
             match ready_rx.recv() {
                 Ok(Ok(())) => Ok(Self {
@@ -283,9 +282,9 @@ mod fallback {
                 }),
                 Ok(Err(e)) => {
                     let _ = thread.join();
-                    Err(anyhow!("{e}"))
+                    Err(CaptureError::msg(e))
                 }
-                Err(_) => Err(anyhow!("thread exited during setup")),
+                Err(_) => Err(CaptureError::msg("thread exited during setup")),
             }
         }
     }
@@ -304,31 +303,43 @@ mod fallback {
 
         // Find the libavdevice input demuxer and open the device by name.
         let ifmt = unsafe {
-            let name = std::ffi::CString::new(format)?;
+            let name = std::ffi::CString::new(format).context("device format name")?;
             let p = ffmpeg::ffi::av_find_input_format(name.as_ptr());
             if p.is_null() {
-                bail!("input '{format}' not available in this FFmpeg build");
+                return Err(CaptureError::msg(format!(
+                    "input '{format}' not available in this FFmpeg build"
+                )));
             }
             ffmpeg::format::format::Input::wrap(p as *mut _)
         };
         let mut ictx =
             match ffmpeg::format::open(&device, &ffmpeg::format::format::Format::Input(ifmt))
-                .map_err(|e| anyhow!("opening {format} '{device}': {e}"))?
+                .map_err(|e| CaptureError::msg(format!("opening {format} '{device}': {e}")))?
             {
                 ffmpeg::format::context::Context::Input(i) => i,
-                _ => bail!("{format} '{device}' is not an input"),
+                _ => {
+                    return Err(CaptureError::msg(format!(
+                        "{format} '{device}' is not an input"
+                    )));
+                }
             };
 
         let stream = ictx
             .streams()
             .best(ffmpeg::media::Type::Audio)
-            .ok_or_else(|| anyhow!("no audio stream from {format} '{device}'"))?;
+            .ok_or_else(|| {
+                CaptureError::msg(format!("no audio stream from {format} '{device}'"))
+            })?;
         let stream_index = stream.index();
-        let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?
+        let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+            .context("decoder from stream parameters")?
             .decoder()
-            .audio()?;
+            .audio()
+            .context("audio decoder")?;
 
-        ready.send(Ok(())).map_err(|_| anyhow!("ready signal"))?;
+        ready
+            .send(Ok(()))
+            .map_err(|_| CaptureError::msg("ready signal"))?;
 
         let mut resampler: Option<ffmpeg::software::resampling::Context> = None;
         let mut frame = ffmpeg::frame::Audio::empty();
@@ -341,7 +352,9 @@ mod fallback {
             if s.index() != stream_index {
                 continue;
             }
-            decoder.send_packet(&packet)?;
+            decoder
+                .send_packet(&packet)
+                .context("decoding audio packet")?;
             while decoder.receive_frame(&mut frame).is_ok() {
                 // Stamp a canonical layout for the channel count on every frame, so swr
                 // doesn't reject a differing AVChannelLayout representation ("Input
@@ -349,17 +362,24 @@ mod fallback {
                 let in_layout =
                     ffmpeg::channel_layout::ChannelLayout::default(frame.channels().max(1) as i32);
                 if resampler.is_none() {
-                    resampler = Some(ffmpeg::software::resampling::Context::get(
-                        frame.format(),
-                        in_layout,
-                        frame.rate(),
-                        ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
-                        ffmpeg::channel_layout::ChannelLayout::STEREO,
-                        RATE,
-                    )?);
+                    resampler = Some(
+                        ffmpeg::software::resampling::Context::get(
+                            frame.format(),
+                            in_layout,
+                            frame.rate(),
+                            ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
+                            ffmpeg::channel_layout::ChannelLayout::STEREO,
+                            RATE,
+                        )
+                        .context("building the audio resampler")?,
+                    );
                 }
                 frame.set_channel_layout(in_layout);
-                resampler.as_mut().unwrap().run(&frame, &mut out)?;
+                resampler
+                    .as_mut()
+                    .unwrap()
+                    .run(&frame, &mut out)
+                    .context("resampling audio")?;
                 let n = out.samples() * CHANNELS as usize;
                 let bytes = out.data(0);
                 if bytes.len() >= n * 4 {

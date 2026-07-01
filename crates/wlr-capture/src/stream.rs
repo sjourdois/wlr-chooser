@@ -12,9 +12,9 @@
 //! monitor read them back to CPU pixels. The driver stays in the dependency-free
 //! core so any tool can use it.
 
+use crate::error::Result;
 use crate::gl::GpuReadback;
 use crate::wl::{CapturedImage, Client, Frame, SessionId};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
 /// Default time to wait for the source to appear before giving up.

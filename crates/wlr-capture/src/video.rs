@@ -14,9 +14,9 @@
 //! The pipeline is initialised lazily on the first frame, so the encoder learns its
 //! dimensions from the stream — the caller doesn't have to know them in advance.
 
+use crate::error::{CaptureError, Context, Result};
 use crate::sink::FrameSink;
 use crate::wl::CapturedImage;
-use anyhow::{Context, Result, anyhow, bail};
 use ffmpeg::format::Pixel;
 use ffmpeg_next as ffmpeg;
 use std::path::{Path, PathBuf};
@@ -178,13 +178,15 @@ impl VaapiCtx {
             if r < 0 {
                 let name =
                     device.map_or_else(|| "(default)".to_string(), |p| p.display().to_string());
-                bail!("opening VAAPI device {name} (code {r})");
+                return Err(CaptureError::msg(format!(
+                    "opening VAAPI device {name} (code {r})"
+                )));
             }
 
             let frames = ffi::av_hwframe_ctx_alloc(dev);
             if frames.is_null() {
                 ffi::av_buffer_unref(&mut dev);
-                bail!("allocating the VAAPI frame pool");
+                return Err(CaptureError::msg("allocating the VAAPI frame pool"));
             }
             let fctx = (*frames).data as *mut ffi::AVHWFramesContext;
             (*fctx).format = ffi::AVPixelFormat::AV_PIX_FMT_VAAPI;
@@ -198,7 +200,9 @@ impl VaapiCtx {
                 let mut frames = frames;
                 ffi::av_buffer_unref(&mut frames);
                 ffi::av_buffer_unref(&mut dev);
-                bail!("initialising the VAAPI frame pool (code {r})");
+                return Err(CaptureError::msg(format!(
+                    "initialising the VAAPI frame pool (code {r})"
+                )));
             }
             Ok(Self {
                 device: dev,
@@ -255,12 +259,12 @@ fn resolve_backend(backend: Backend) -> Result<Backend> {
         Backend::Auto => [Backend::Nvenc, Backend::Vaapi, Backend::Software]
             .into_iter()
             .find(|&b| available(b))
-            .ok_or_else(|| anyhow!("no H.264 encoder available (need NVENC, VAAPI or libx264)")),
+            .ok_or(CaptureError::NoVideoEncoder),
         b if available(b) => Ok(b),
-        b => bail!(
+        b => Err(CaptureError::msg(format!(
             "encoder '{}' is not available in this FFmpeg build",
             b.codec_name()
-        ),
+        ))),
     }
 }
 
@@ -270,13 +274,14 @@ fn build_audio_stream(
     global_header: bool,
 ) -> Result<AudioPipe> {
     let codec = ffmpeg::encoder::find(ffmpeg::codec::Id::AAC)
-        .ok_or_else(|| anyhow!("no AAC encoder in this FFmpeg build"))?;
+        .ok_or_else(|| CaptureError::msg("no AAC encoder in this FFmpeg build"))?;
     let mut astream = octx.add_stream(codec).context("adding audio stream")?;
     let stream_index = astream.index();
 
     let mut aenc = ffmpeg::codec::context::Context::new_with_codec(codec)
         .encoder()
-        .audio()?;
+        .audio()
+        .context("opening the audio encoder")?;
     aenc.set_rate(AUDIO_RATE as i32);
     aenc.set_channel_layout(ffmpeg::channel_layout::ChannelLayout::STEREO);
     aenc.set_format(ffmpeg::format::Sample::F32(
@@ -303,18 +308,25 @@ fn build_audio_stream(
     })
 }
 
+/// Round a source size down to even encoder dimensions (H.264 chroma is subsampled 2×2),
+/// or reject it as [`CaptureError::SourceTooSmall`] if either axis rounds down to zero.
+fn even_dst(sw: u32, sh: u32) -> Result<(u32, u32)> {
+    let dst = (sw & !1, sh & !1);
+    if dst.0 == 0 || dst.1 == 0 {
+        return Err(CaptureError::SourceTooSmall { w: sw, h: sh });
+    }
+    Ok(dst)
+}
+
 impl Pipeline {
     /// Build the output context + encoder for a source of size `(sw, sh)`.
     fn new(path: &Path, opts: &Options, sw: u32, sh: u32) -> Result<Self> {
         let backend = resolve_backend(opts.backend)?;
-        let codec = ffmpeg::encoder::find_by_name(backend.codec_name())
-            .ok_or_else(|| anyhow!("encoder '{}' unavailable", backend.codec_name()))?;
+        let codec = ffmpeg::encoder::find_by_name(backend.codec_name()).ok_or_else(|| {
+            CaptureError::msg(format!("encoder '{}' unavailable", backend.codec_name()))
+        })?;
 
-        // Even dimensions (H.264 chroma is subsampled 2×2).
-        let dst = (sw & !1, sh & !1);
-        if dst.0 == 0 || dst.1 == 0 {
-            bail!("source too small to encode ({sw}x{sh})");
-        }
+        let dst = even_dst(sw, sh)?;
         // The encoder's input format, and the scaler's output. NVENC takes NV12 and
         // libx264 takes planar YUV420P, both CPU frames sent directly. VAAPI consumes
         // hardware (VAAPI) frames, so we scale to a CPU NV12 frame and upload it.
@@ -335,7 +347,8 @@ impl Pipeline {
         let mut ost = octx.add_stream(codec).context("adding video stream")?;
         let mut enc = ffmpeg::codec::context::Context::new_with_codec(codec)
             .encoder()
-            .video()?;
+            .video()
+            .context("opening the video encoder")?;
         enc.set_width(dst.0);
         enc.set_height(dst.1);
         enc.set_format(enc_format);
@@ -457,11 +470,15 @@ impl Pipeline {
             unsafe {
                 let r = ffmpeg::ffi::av_hwframe_get_buffer(vaapi.frames, hw.as_mut_ptr(), 0);
                 if r < 0 {
-                    bail!("allocating a VAAPI surface (code {r})");
+                    return Err(CaptureError::msg(format!(
+                        "allocating a VAAPI surface (code {r})"
+                    )));
                 }
                 let r = ffmpeg::ffi::av_hwframe_transfer_data(hw.as_mut_ptr(), dst.as_ptr(), 0);
                 if r < 0 {
-                    bail!("uploading the frame to the GPU (code {r})");
+                    return Err(CaptureError::msg(format!(
+                        "uploading the frame to the GPU (code {r})"
+                    )));
                 }
             }
             hw.set_pts(Some(pts));
@@ -616,6 +633,17 @@ impl FrameSink for VideoEncoder {
 mod tests {
     use super::*;
 
+    #[test]
+    fn even_dst_rounds_down_and_rejects_zero() {
+        assert_eq!(even_dst(1920, 1080).unwrap(), (1920, 1080));
+        // Odd axes round down to even.
+        assert_eq!(even_dst(101, 51).unwrap(), (100, 50));
+        // A 1px axis rounds to zero → too small to encode.
+        assert!(even_dst(1, 4).is_err());
+        assert!(even_dst(4, 1).is_err());
+        assert!(even_dst(0, 0).is_err());
+    }
+
     /// A synthetic RGBA frame: a diagonal gradient shifted by `t` (so motion exists
     /// for the encoder to chew on).
     fn frame(w: u32, h: u32, t: u32) -> CapturedImage {
@@ -649,12 +677,16 @@ mod tests {
         };
 
         let (w, h, fps, n) = (320u32, 240u32, 30u32, 30u32);
-        // Unique per backend: tests run in parallel and would otherwise share a file.
-        let path = std::env::temp_dir().join(format!(
-            "wlr_capture_enc_{}_{}.mp4",
-            std::process::id(),
-            backend.codec_name()
-        ));
+        // A private (0600), randomly-named temp file, removed when `tmp` drops at the end
+        // of the test. The random name keeps parallel backends from sharing a file; the
+        // `.mp4` suffix lets FFmpeg infer the muxer. The encoder writes into the existing
+        // file, so its 0600 mode is preserved (no world-readable output in /tmp).
+        let tmp = tempfile::Builder::new()
+            .prefix("wlr_capture_enc_")
+            .suffix(".mp4")
+            .tempfile()
+            .expect("create temp output");
+        let path = tmp.path().to_path_buf();
         let mut enc = VideoEncoder::new(
             &path,
             Options {
@@ -701,7 +733,8 @@ mod tests {
             assert_eq!(fields, ["h264", "320", "240"], "ffprobe stream metadata");
         }
 
-        let _ = std::fs::remove_file(&path);
+        // `tmp` drops here, removing the file.
+        drop(tmp);
     }
 
     /// Software (libx264) path — the portable fallback.

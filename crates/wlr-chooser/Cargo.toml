@@ -24,7 +24,11 @@ name = "wlr-switcher"
 path = "src/bin/wlr-switcher.rs"
 
 [dependencies]
-wlr-capture = { path = "../wlr-capture", version = "1.3.2", default-features = false, features = ["toolkit"] }
+wlr-capture = { path = "../wlr-capture", version = "1.4.0", default-features = false, features = ["toolkit"] }
+# This crate owns its localised catalog (`i18n/`); wlr-i18n is the shared loader plumbing.
+wlr-i18n = { path = "../wlr-i18n", version = "1.4.0", default-features = false }
+# For `#[derive(RustEmbed)]` over `i18n/` (the `i18n` feature).
+rust-embed = { workspace = true, optional = true }
 anyhow.workspace = true
 egui.workspace = true
 smithay-client-toolkit.workspace = true
@@ -42,7 +46,7 @@ default = ["gpu", "i18n"]
 gpu = ["wlr-capture/gpu"]
 # Localised UI via Fluent. On by default; `--no-default-features` builds English-only
 # with no Fluent dependency.
-i18n = ["wlr-capture/i18n"]
+i18n = ["wlr-i18n/i18n", "dep:rust-embed"]
 
 [package.metadata.deb]
 maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"
@@ -67,3 +71,7 @@ assets = [
 # Bundled into the `wlr-utils` crate for prebuilt archives/installers; not shipped as a
 # standalone prebuilt app (still published to crates.io for à-la-carte `cargo install`).
 dist = false
+
+# Generates the English fallback table for the no-Fluent build.
+[build-dependencies]
+wlr-i18n = { path = "../wlr-i18n", version = "1.4.0", default-features = false }

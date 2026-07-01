@@ -11,6 +11,8 @@ use wlr_capture::capture::{self, DEFAULT_BUDGET};
 use wlr_capture::overlay;
 use wlr_capture::wl::{self, Region};
 
+mod i18n;
+
 #[derive(Parser)]
 #[command(
     name = "wlr-peek",
@@ -80,7 +82,7 @@ enum Format {
 }
 
 pub fn main() {
-    wlr_capture::i18n::init();
+    crate::i18n::init();
     let cli = Cli::parse();
     let res = match cli.cmd {
         Cmd::Color(args) => color(args),
@@ -93,7 +95,9 @@ pub fn main() {
         Cmd::Watch(args) => watch(args),
         #[cfg(feature = "ocr")]
         Cmd::Grep(args) => grep(args),
-        Cmd::Doctor => doctor(),
+        Cmd::Doctor => {
+            wlr_capture::doctor::report("wlr-peek", env!("CARGO_PKG_VERSION")).map_err(Into::into)
+        }
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {
@@ -115,7 +119,8 @@ fn color(args: ColorArgs) -> Result<()> {
     // Freeze every output, let the user aim and click a pixel on the loupe overlay,
     // then read that pixel back from the very same frozen capture.
     let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-    let Some((x, y)) = overlay::pick_point_on(&conn, &caps)? else {
+    let Some((x, y)) = overlay::pick_point_on(&conn, &caps, &crate::tr!("overlay-pick-hint"))?
+    else {
         std::process::exit(1); // cancelled
     };
 
@@ -140,7 +145,7 @@ fn loupe() -> Result<()> {
     let mut client = wl::Client::connect().context("Wayland connection")?;
     client.refresh().ok();
     let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-    overlay::magnify_on(&conn, &caps)
+    overlay::magnify_on(&conn, &caps, &crate::tr!("overlay-magnify-hint")).map_err(Into::into)
 }
 
 #[derive(Args)]
@@ -164,14 +169,14 @@ fn region(args: RegionArgs) -> Result<()> {
     client.refresh().ok();
     let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
     if args.point {
-        let (x, y) = match overlay::pick_point_on(&conn, &caps)? {
+        let (x, y) = match overlay::pick_point_on(&conn, &caps, &crate::tr!("overlay-pick-hint"))? {
             Some(p) => p,
             None => std::process::exit(1),
         };
         let fmt = args.format.as_deref().unwrap_or("%x,%y");
         println!("{}", fill_geometry(fmt, x, y, 0, 0));
     } else {
-        let r = match overlay::select_region_on(&conn, &caps)? {
+        let r = match overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
             Some(r) => r,
             None => std::process::exit(1),
         };
@@ -249,12 +254,13 @@ fn mirror(args: MirrorArgs) -> Result<()> {
         let mut client = wl::Client::connect().context("Wayland connection")?;
         client.refresh().ok();
         let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-        let region = match overlay::select_region_on(&conn, &caps)? {
-            Some(r) => r,
-            None => std::process::exit(1), // cancelled
-        };
+        let region =
+            match overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
+                Some(r) => r,
+                None => std::process::exit(1), // cancelled
+            };
         let (source, config) = build_source(&client, region, args.zoom, args.follow)?;
-        return wlr_capture::mirror::run_on(&conn, source, config);
+        return wlr_capture::mirror::run_on(&conn, source, config).map_err(Into::into);
     }
     // Other region / output sources → a live region magnifier (single EGL context).
     if let Some(region) = resolve_mirror_region(&args)? {
@@ -280,8 +286,11 @@ fn mirror(args: MirrorArgs) -> Result<()> {
             label,
             icon,
             relaunch: vec!["mirror".to_string()],
+            loading: crate::tr!("loading"),
+            source_gone: crate::tr!("pip-gone"),
         },
     )
+    .map_err(Into::into)
 }
 
 /// Resolve a non-interactive region/output mirror source to a [`Region`] in global
@@ -326,7 +335,7 @@ fn mirror_region(region: Region, zoom: f32, follow: Follow) -> Result<()> {
     let mut client = wl::Client::connect().context("Wayland connection")?;
     client.refresh().ok();
     let (source, config) = build_source(&client, region, zoom, follow)?;
-    wlr_capture::mirror::run(source, config)
+    wlr_capture::mirror::run(source, config).map_err(Into::into)
 }
 
 /// Build the mirror source for a region: follow the **window** under it when asked (and
@@ -410,6 +419,8 @@ fn region_window_source(
             label,
             icon: None,
             relaunch: vec![],
+            loading: crate::tr!("loading"),
+            source_gone: crate::tr!("pip-gone"),
         },
     )))
 }
@@ -463,6 +474,8 @@ fn region_source(
             label: format!("{},{} {}×{}", region.x, region.y, region.w, region.h),
             icon: None,
             relaunch: vec![], // no re-pick in region mode
+            loading: crate::tr!("loading"),
+            source_gone: crate::tr!("pip-gone"),
         },
     ))
 }
@@ -492,9 +505,7 @@ fn pick_via_chooser() -> Option<String> {
 /// (keep it alive) or `None` if another mirror already owns it.
 fn mirror_lock(identifier: &str) -> Option<std::fs::File> {
     use rustix::fs::{FlockOperation, flock};
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
+    let dir = wlr_capture::paths::runtime_dir();
     let safe: String = identifier
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
@@ -551,9 +562,10 @@ fn format_color(fmt: Format, r: u8, g: u8, b: u8) -> String {
 fn copy_text(text: String, foreground: bool) -> Result<()> {
     const MIME: &str = "text/plain;charset=utf-8";
     if foreground {
-        return wlr_capture::clipboard::serve(MIME, text.into_bytes());
+        return wlr_capture::clipboard::serve(MIME, text.into_bytes()).map_err(Into::into);
     }
     wlr_capture::clipboard::spawn_detached(text.as_bytes(), &["clipboard-serve", "--mime", MIME])
+        .map_err(Into::into)
 }
 
 #[cfg(feature = "ocr")]
@@ -605,17 +617,19 @@ fn ocr(args: OcrArgs) -> Result<()> {
 fn ocr_source(client: &mut wl::Client, args: &OcrArgs) -> Result<wl::CapturedImage> {
     if let Some(geo) = &args.geometry {
         capture::capture_region(client, capture::parse_geometry(geo)?, DEFAULT_BUDGET)
+            .map_err(Into::into)
     } else if let Some(name) = &args.output {
-        capture::capture_output(client, Some(name), DEFAULT_BUDGET)
+        capture::capture_output(client, Some(name), DEFAULT_BUDGET).map_err(Into::into)
     } else if args.active_window {
-        capture::capture_region(client, active_window_rect()?, DEFAULT_BUDGET)
+        capture::capture_region(client, active_window_rect()?, DEFAULT_BUDGET).map_err(Into::into)
     } else if args.current_output {
         capture::capture_output(client, Some(&focused_output()?), DEFAULT_BUDGET)
+            .map_err(Into::into)
     } else {
         // Default (no source flag): freeze, let the user drag a region.
         let caps = capture::capture_all(client, DEFAULT_BUDGET)?;
-        match overlay::select_region(&caps)? {
-            Some(region) => capture::composite(&caps, region),
+        match overlay::select_region(&caps, &crate::tr!("overlay-region-hint"))? {
+            Some(region) => capture::composite(&caps, region).map_err(Into::into),
             None => std::process::exit(1), // cancelled
         }
     }
@@ -829,7 +843,7 @@ fn grep_source(client: &mut wl::Client, args: &GrepArgs) -> Result<(wl::Captured
         ))
     } else {
         let caps = capture::capture_all(client, DEFAULT_BUDGET)?;
-        match overlay::select_region(&caps)? {
+        match overlay::select_region(&caps, &crate::tr!("overlay-region-hint"))? {
             Some(region) => Ok((capture::composite(&caps, region)?, region)),
             None => std::process::exit(1), // cancelled
         }
@@ -856,95 +870,6 @@ fn focused_output() -> Result<String> {
         .with_context(|| format!("no focused output detected (via {})", backend.name()))
 }
 
-/// Report the capture-relevant Wayland globals the current compositor advertises,
-/// so users can tell at a glance whether (and how well) the suite will work here.
-fn doctor() -> Result<()> {
-    // (interface, what it enables). Order roughly by importance.
-    const CHECKS: &[(&str, &str)] = &[
-        ("ext_image_copy_capture_manager_v1", "capture frames (core)"),
-        (
-            "ext_output_image_capture_source_manager_v1",
-            "capture an output (core)",
-        ),
-        (
-            "ext_foreign_toplevel_image_capture_source_manager_v1",
-            "capture a window",
-        ),
-        (
-            "ext_foreign_toplevel_list_v1",
-            "enumerate windows (chooser, -w)",
-        ),
-        ("zxdg_output_manager_v1", "accurate output geometry"),
-        (
-            "zwlr_layer_shell_v1",
-            "overlays: region select, loupe, switcher",
-        ),
-        ("zwlr_data_control_manager_v1", "clipboard copy (-c)"),
-        ("zwp_linux_dmabuf_v1", "zero-copy GPU capture"),
-        (
-            "zwp_keyboard_shortcuts_inhibit_manager_v1",
-            "switcher keyboard grab",
-        ),
-    ];
-
-    let globals = wl::advertised_globals().context("listing Wayland globals")?;
-    let version = |iface: &str| globals.iter().find(|(n, _)| n == iface).map(|(_, v)| *v);
-
-    println!("Compositor capabilities (advertised Wayland globals):\n");
-    for (iface, desc) in CHECKS {
-        match version(iface) {
-            Some(v) => println!("  ✓ {iface} (v{v}) — {desc}"),
-            None => println!("  ✗ {iface} — {desc}"),
-        }
-    }
-
-    let core = version("ext_image_copy_capture_manager_v1").is_some()
-        && version("ext_output_image_capture_source_manager_v1").is_some();
-    let window = version("ext_foreign_toplevel_image_capture_source_manager_v1").is_some();
-    println!();
-    if core {
-        // The output source is the protocol floor for screen capture, but the tools open
-        // the window source at start-up too (see below), so on a screen-only compositor
-        // they still won't run — flag that rather than a bare "supported".
-        if window {
-            println!("Screen capture: supported.");
-        } else {
-            println!(
-                "Screen capture: advertised by the compositor, but the tools also open the \
-                 window source at start-up, so they need wlroots ≥ 0.20 / Sway ≥ 1.12 too \
-                 (see below)."
-            );
-        }
-    } else {
-        println!(
-            "Screen capture: UNSUPPORTED — needs ext-image-copy-capture-v1 + the output \
-             source (wlroots ≥ 0.19 / Sway ≥ 1.11; not on Mutter/KWin)."
-        );
-    }
-    if window {
-        println!("Window capture: supported.");
-    } else {
-        println!(
-            "Window capture: UNSUPPORTED — needs the foreign-toplevel source \
-             (wlroots ≥ 0.20 / Sway ≥ 1.12). Every tool here opens this source at \
-             start-up, so none will run without it — even for a screen capture."
-        );
-    }
-
-    // Focus IPC (active-window / current-output) needs the `focus` engine feature,
-    // which `wlr-peek` pulls in via `ocr`/`watch`.
-    #[cfg(any(feature = "ocr", feature = "watch"))]
-    match wlr_capture::focus::detect() {
-        Some(b) => println!(
-            "Focus IPC: {} detected (-a / --current-output work).",
-            b.name()
-        ),
-        None => println!("Focus IPC: none detected (-a / --current-output unavailable)."),
-    }
-
-    Ok(())
-}
-
 /// The `clipboard-serve` daemon body: read the blob from stdin, then serve it.
 fn clipboard_serve(mime: &str) -> Result<()> {
     use std::io::Read;
@@ -952,7 +877,7 @@ fn clipboard_serve(mime: &str) -> Result<()> {
     std::io::stdin()
         .read_to_end(&mut data)
         .context("reading clipboard data")?;
-    wlr_capture::clipboard::serve(mime, data)
+    wlr_capture::clipboard::serve(mime, data).map_err(Into::into)
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,7 +1094,7 @@ mod watch_impl {
     fn resolve_target(client: &mut wl::Client, args: &WatchArgs) -> Result<Target> {
         if args.select {
             let caps = capture::capture_all(client, capture::DEFAULT_BUDGET)?;
-            match overlay::select_region(&caps)? {
+            match overlay::select_region(&caps, &crate::tr!("overlay-region-hint"))? {
                 Some(region) => region_target(client, region),
                 None => std::process::exit(1), // cancelled
             }
@@ -1265,6 +1190,30 @@ mod watch_impl {
             return Err(err());
         }
         Ok(Duration::from_secs_f64(secs * mult))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::parse_interval;
+        use std::time::Duration;
+
+        #[test]
+        fn parse_interval_reads_units() {
+            assert_eq!(parse_interval("2s").unwrap(), Duration::from_millis(2000));
+            assert_eq!(parse_interval("500ms").unwrap(), Duration::from_millis(500));
+            assert_eq!(parse_interval("1m").unwrap(), Duration::from_millis(60_000));
+            assert_eq!(parse_interval("1.5s").unwrap(), Duration::from_millis(1500));
+            // A bare number is seconds.
+            assert_eq!(parse_interval("3").unwrap(), Duration::from_millis(3000));
+        }
+
+        #[test]
+        fn parse_interval_rejects_nonpositive_and_garbage() {
+            assert!(parse_interval("0s").is_err());
+            assert!(parse_interval("-1s").is_err());
+            assert!(parse_interval("abc").is_err());
+            assert!(parse_interval("").is_err());
+        }
     }
 }
 

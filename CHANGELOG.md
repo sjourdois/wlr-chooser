@@ -4,6 +4,47 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.4.0 — 2026-07-01
+
+### Added
+
+- **`wlr-draw` configurable keys** — bindings now live in `~/.config/wlr-draw/keys.toml`;
+  the click-through key (Caps Lock by default) and every tool key can be rebound, so
+  keyboards without a Caps Lock (e.g. HHKB) are no longer stuck (#2).
+- **`wlr-draw save [path]`** — save the annotated screen to a chosen path from the command
+  line (#3).
+- **Screen-only compositors** — tools degrade gracefully on wlroots 0.19 / Sway 1.11:
+  screen capture (screenshots, recording, loupe, `wlr-draw` freeze/save) works; window-only
+  features stay off with a clear notice, and `wlr-switcher` reports the missing window
+  capture and exits instead of showing an empty overlay (#1).
+- **`doctor` on every tool** — the compositor report is now a `doctor` subcommand on
+  `wlr-peek`/`wlr-shot`/`wlr-draw` and a `--doctor` flag on `wlr-chooser`/`wlr-switcher`
+  (previously only `wlr-peek doctor`), so any single-tool install can produce it. It also
+  reports the run environment — tool version, OS, compositor + version, install hint — so
+  it doubles as the environment block a bug report needs.
+
+### Fixed
+
+- **`wlr-draw save`** — paths containing spaces are no longer truncated (#3).
+- **`wlr-draw`** — a very short arrow no longer panics while sizing its head.
+- **Debian / Ubuntu `.deb`** — now built per distro (Debian 12–sid, Ubuntu 22.04–26.04) so
+  it links against that distro's FFmpeg / Leptonica; fixes `liblept.so.5` / `libavutil.so.58`
+  load failures on Debian 13 (#1).
+- **`wlr-peek doctor`** — verdicts reflect the two capture floors (screen 0.19/1.11,
+  window 0.20/1.12).
+
+### Security
+
+- Control socket and single-instance locks stay in a private directory even when
+  `$XDG_RUNTIME_DIR` is unset, instead of a predictable name in world-readable `/tmp`.
+
+### Changed
+
+- **`wlr-capture`** — the engine returns a typed `CaptureError` instead of `anyhow`
+  (breaking for library users); each tool now owns its own translation catalog.
+- **Docs** — added a compositor compatibility matrix and per-distro `.deb` install notes.
+- Dependency refresh (egui 0.35, xkbcommon 0.9).
+
 ## 1.3.2 — 2026-06-26
 
 ### Added

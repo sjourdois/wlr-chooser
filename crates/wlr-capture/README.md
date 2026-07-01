@@ -46,8 +46,9 @@ The reusable bricks plus the overlay UI helpers they share:
   context bound to a `wl_surface`, reusing `gl`'s dma-buf import for live textures.
   Any windowing host binds a `Gpu` to its surface and drives one egui frame per
   repaint.
-- **`theme` / `i18n` / `icons`** *(toolkit)* — TOML theming, Fluent localisation
-  (13 languages), and `.desktop`/icon-theme app-icon resolution.
+- **`theme` / `icons`** *(toolkit)* — TOML theming and `.desktop`/icon-theme
+  app-icon resolution. On-screen text is passed in by the caller; each tool crate
+  owns its own Fluent catalog via the `wlr-i18n` crate.
 
 ## Status
 
@@ -56,14 +57,13 @@ API is not yet stabilised and may change between minor versions. It is published
 so the tools can depend on it from crates.io.
 
 A lean always-on core (`wl`, `gl`, `clipboard`, `sink`, `stream`, `diff`) plus opt-in
-features. On by default: `gpu`, `toolkit`, `i18n`.
+features. On by default: `gpu`, `toolkit`.
 
 - **`gpu`** — the zero-copy dma-buf *capture* path (pulls `gbm`); without it a pure-CPU
   shm build (no `libgbm`). The `gl` dma-buf import + readback is built either way.
 - **`toolkit`** — the egui/EGL overlay UI (`render` + `theme`/`icons`); drop it
   (`--no-default-features`) for a headless build that only captures and reads back —
   no `egui`/`resvg`/`fontdb` (a ~6× smaller dependency tree).
-- **`i18n`** — Fluent localisation; without it `tr!` returns the English fallback.
 - Off by default: **`compose`** (source→image), **`focus`** (compositor IPC),
   **`overlay`**, **`mirror`**, **`video`** (FFmpeg), **`audio`** (PipeWire;
   **`audio-fallback`** adds Pulse/ALSA).

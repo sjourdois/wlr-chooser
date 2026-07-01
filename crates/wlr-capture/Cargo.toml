@@ -18,13 +18,13 @@ path = "src/lib.rs"
 # published docs. Enable them explicitly. `audio`/`audio-fallback` stay off: their
 # `pipewire` dep fails to build on docs.rs (whereas `video`'s ffmpeg-next builds fine).
 [package.metadata.docs.rs]
-features = ["gpu", "toolkit", "i18n", "compose", "focus", "overlay", "mirror", "video"]
+features = ["gpu", "toolkit", "compose", "focus", "overlay", "mirror", "video"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # --- Always-on core: capture engine, clipboard, dma-buf import + readback, sink.
 # No egui/SVG/font deps, so headless builds (a future recorder) stay lean.
-anyhow.workspace = true
+thiserror.workspace = true
 glow.workspace = true
 edgefirst-egl.workspace = true
 libloading.workspace = true
@@ -49,21 +49,22 @@ ffmpeg-next = { workspace = true, optional = true }
 # TARGET_OBJECT (for `--audio <node>`); libpipewire 1.x supports it.
 pipewire = { version = "0.10", optional = true, features = ["v0_3_44"] }
 
-# --- Toolkit (the `toolkit` feature): egui/EGL overlay rendering + theme/i18n/icons.
+# --- Toolkit (the `toolkit` feature): egui/EGL overlay rendering + theme/icons.
 egui = { workspace = true, optional = true }
 egui_glow = { workspace = true, optional = true }
 wayland-egl = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
-i18n-embed = { workspace = true, optional = true }
-rust-embed = { workspace = true, optional = true }
-unic-langid = { workspace = true, optional = true }
 resvg = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 fontdb = { workspace = true, optional = true }
 
+[dev-dependencies]
+# Private (0600), randomly-named, auto-removed temp output for the encoder round-trip test.
+tempfile = { workspace = true }
+
 [features]
-default = ["gpu", "toolkit", "i18n"]
+default = ["gpu", "toolkit"]
 # Zero-copy GPU capture: allocate dma-bufs via gbm and import them as GL textures.
 # Without it, only the CPU shm path is built (no gbm / libgbm-dev dependency).
 # Note: the EGL/GL dma-buf import + readback in `gl` is built regardless — it needs
@@ -96,15 +97,10 @@ audio = ["video", "dep:pipewire"]
 # dep — libavdevice ships with FFmpeg). Off by default: PipeWire is universal today, so
 # this is only for the rare PipeWire-less host. Tried after the native PipeWire path.
 audio-fallback = ["audio", "ffmpeg-next/device"]
-# Localisation via Fluent (`i18n`). On by default. Without it, `tr!` returns the
-# English text generated from the `en` catalog at build time and the whole Fluent
-# stack (i18n-embed, rust-embed, unic-langid) is dropped — so a minimal/headless
-# build needs no i18n dependency.
-i18n = ["dep:i18n-embed", "dep:rust-embed", "dep:unic-langid"]
 # The egui/EGL overlay toolkit (`render` + `theme`/`icons`). On by default; disable it
 # (`--no-default-features`) for a headless build that only captures and reads back,
-# dropping egui, resvg and fontdb. (UI strings localise via the separate `i18n`
-# feature; the toolkit uses `tr!`, which works with or without it.)
+# dropping egui, resvg and fontdb. Carries no UI strings — on-screen text is passed in
+# by the caller (each tool crate localises via `wlr-i18n`).
 toolkit = [
     "dep:egui",
     "dep:egui_glow",

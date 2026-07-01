@@ -83,6 +83,30 @@ chip shows the active tool, a **sample of the current stroke width** and its siz
 the colour — and it **pulses** a few times when you enter draw mode on an empty screen
 (or jab repeatedly at one spot) to remind you you're drawing.
 
+### Customising shortcuts
+
+Every shortcut above is rebindable from **`~/.config/wlr-draw/keys.toml`** (honours
+`$XDG_CONFIG_HOME`). Key names are the same **XKB keysym names** sway/Hyprland use in
+`bindsym` (`a`, `space`, `Caps_Lock`, `plus`, `F5`…), matched case-insensitively. Each
+binding is a single name or a list; missing entries keep their default, so a partial file
+is fine and no config at all means the defaults below.
+
+The three held controls — `passthrough` (click-through), `constrain`, `spotlight` — take
+**either a modifier** (`caps`, `ctrl`, `shift`, `alt`, `super`) **or a regular key**. This
+is the fix for keyboards without a usable Caps Lock (e.g. HHKB): point `passthrough` at
+`alt`, `super`, or any key. A modifier engages while held (Caps Lock latches); a regular
+key bound to `passthrough` toggles, and to `constrain`/`spotlight` engages while held.
+
+A commented example listing every binding with its default is at
+[`docs/wlr-draw-keys.toml`](../../docs/wlr-draw-keys.toml) — copy it to
+`~/.config/wlr-draw/keys.toml` and edit.
+
+Fixed (not rebindable): `Esc` (always backs out), the arrow-key nudge, and the spotlight
+size/dim cluster (`i`/`j`/`k`/`l` + wheel, live only while spotlighting). The nudge step
+size still reads the physical `Shift` (1px) / `Ctrl` (big) keys. A bad name or a key bound
+to two things is reported on stderr and the default is kept. The on-screen `h` legend and
+the tray's Shortcuts menu reflect your bindings.
+
 ## Drawing
 
 - **Pen** — freehand. **Eraser** — deletes whole strokes/shapes the cursor passes over.
@@ -137,6 +161,27 @@ generator under uwsm.
 After that first run the desktop file's presence is the sole source of truth: the tray's
 **Start on login** checkbox writes or removes it, and unchecking it is permanent — a later
 manual launch won't recreate an entry you deliberately dropped.
+
+### Logs
+
+The daemon logs to stderr, which the session journals. Filter by the **binary name**, not
+the unit — it's clean and works however the daemon was started:
+
+```sh
+journalctl --user -t wlr-draw -f
+```
+
+(A default XDG-autostart launch shows up under the systemd unit `app-wlr\x2ddraw@…` — the
+`\x2d` is just systemd escaping the dash in the desktop-file name, which is awkward to
+type. `-t wlr-draw` sidesteps it. If you want a tidy unit name in the journal too, run the
+daemon from the systemd user unit below instead, and it appears as `wlr-draw.service`.)
+
+Restarting the autostart daemon (e.g. after installing a new build) uses that same escaped
+unit name — quote it so the shell keeps the backslash:
+
+```sh
+systemctl --user restart 'app-wlr\x2ddraw@autostart.service'
+```
 
 ### Tray icon
 
@@ -208,8 +253,10 @@ cargo build --release -p wlr-draw
 - **Compositor** — a wlroots one advertising `wlr-layer-shell` (sway, Hyprland, niri, …)
   for the always-on-top overlay. Plain annotation needs only that, at any version.
 - **Screen capture** (freeze-frame `Space`, save `w`) — additionally needs
-  `ext-image-copy-capture-v1` with the output and foreign-toplevel sources, i.e.
-  **Sway ≥ 1.12 / wlroots ≥ 0.20**. Annotating without freezing or saving works below that.
+  `ext-image-copy-capture-v1` with the **output** source, i.e. **Sway ≥ 1.11 /
+  wlroots ≥ 0.19**. Where it's missing, freeze and save are hidden from the help/tray and
+  plain annotation still works. Run `wlr-draw doctor` to check your own; see
+  [COMPATIBILITY.md](../../COMPATIBILITY.md).
 - **Tray** (`tray` feature, on by default) — a StatusNotifierItem host and `libdbus`.
   `--no-default-features` drops the tray and its D-Bus dependency.
 

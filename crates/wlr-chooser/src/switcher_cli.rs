@@ -9,9 +9,10 @@
 
 use crate::ui::{Live, Mode, Options, View};
 use crate::{acquire_switch_lock, run_overlay};
+use crate::{i18n, tr};
 use clap::{Parser, ValueEnum};
 use std::time::Instant;
-use wlr_capture::{i18n, tr, wl};
+use wlr_capture::wl;
 
 /// Presentation of the switcher (CLI mirror of [`View`]).
 #[derive(Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -72,12 +73,23 @@ struct Cli {
     /// Include windows with no app-id (system surfaces)
     #[arg(long)]
     include_system: bool,
+    /// Report which capture protocols the current compositor supports, then exit.
+    #[arg(long)]
+    doctor: bool,
 }
 
 pub fn main() {
     let t0 = Instant::now();
     let cli = Cli::parse();
     i18n::init();
+
+    if cli.doctor {
+        if let Err(e) = wlr_capture::doctor::report("wlr-switcher", env!("CARGO_PKG_VERSION")) {
+            eprintln!("wlr-switcher: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     // Single-instance guard: re-pressing the keybind while we're up is a no-op
     // rather than a stacked overlay (sway runs its bindings over our grab).
@@ -108,6 +120,22 @@ pub fn main() {
         hold,
         live: cli.live.into(),
     };
+
+    // Pre-flight: wlr-switcher switches *windows*, which need the foreign-toplevel
+    // capture source (wlroots >= 0.20 / Sway >= 1.12). On older compositors connect()
+    // now succeeds for screen-only capture, but there are no windows to offer — so say
+    // so clearly and exit, instead of showing an empty dimmed overlay (issue #1).
+    match wl::Client::connect() {
+        Ok(client) if !client.can_capture_windows() => {
+            eprintln!("{}", tr!("capture-no-window"));
+            std::process::exit(2);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", tr!("error", error = format!("{e:#}")));
+            std::process::exit(2);
+        }
+    }
 
     match run_overlay(opts, t0) {
         Ok(Some(sel)) => {

@@ -5,7 +5,7 @@
 //! is to create the shm buffer with the *correct* stride (`width * 4`), which is
 //! where grim 1.5 trips up ("Invalid stride") on some toplevels (Firefox, …).
 
-use anyhow::{Context, Result, bail};
+use crate::error::{CaptureError, Context, Result};
 #[cfg(feature = "gpu")]
 use gbm::{BufferObject, BufferObjectFlags, Device as GbmDevice, Format as GbmFormat, Modifier};
 use rustix::event::{PollFd, PollFlags, Timespec};
@@ -527,6 +527,9 @@ struct State {
     tl_src: Option<ExtForeignToplevelImageCaptureSourceManagerV1>,
     out_src: Option<ExtOutputImageCaptureSourceManagerV1>,
     copy: Option<ExtImageCopyCaptureManagerV1>,
+    /// The foreign-toplevel list, kept alive so the compositor keeps emitting
+    /// toplevel events. `None` on compositors without window capture (wlroots < 0.20).
+    list: Option<ExtForeignToplevelListV1>,
     /// linux-dmabuf manager, if the compositor exposes it (enables the GPU path).
     #[cfg(feature = "gpu")]
     dmabuf: Option<ZwpLinuxDmabufV1>,
@@ -561,19 +564,16 @@ impl Client {
         let copy = globals
             .bind(&qh, 1..=1, ())
             .context("ext_image_copy_capture_manager_v1 missing")?;
-        let tl_src = globals.bind(&qh, 1..=1, ()).context(
-            "ext_foreign_toplevel_image_capture_source_manager_v1 missing: \
-             this compositor cannot capture individual windows. The foreign-toplevel \
-             capture source requires wlroots >= 0.20 (Sway >= 1.12); wlroots 0.19 / \
-             Sway 1.11 only expose output capture. Run `wlr-peek doctor` to see what \
-             your compositor supports.",
-        )?;
+        // Window capture (the foreign-toplevel source + list) only landed in
+        // wlroots >= 0.20 / Sway >= 1.12. Bind them optionally so screen-only capture
+        // still works on wlroots 0.19 / Sway 1.11; window-specific paths then fail with
+        // a clear, localised error (see `open_toplevel_session`). Screen capture
+        // (`copy` + `out_src`) stays mandatory — it is the minimum every tool needs.
+        let tl_src = globals.bind(&qh, 1..=1, ()).ok();
         let out_src = globals
             .bind(&qh, 1..=1, ())
             .context("ext_output_image_capture_source_manager_v1 missing")?;
-        let _list: ExtForeignToplevelListV1 = globals
-            .bind(&qh, 1..=1, ())
-            .context("ext_foreign_toplevel_list_v1 missing")?;
+        let list: Option<ExtForeignToplevelListV1> = globals.bind(&qh, 1..=1, ()).ok();
 
         // Optional: authoritative logical geometry (multi-monitor positions,
         // fractional scale). Absent on a few compositors — we then fall back to
@@ -596,8 +596,9 @@ impl Client {
         let mut state = State {
             shm: Some(shm),
             copy: Some(copy),
-            tl_src: Some(tl_src),
+            tl_src,
             out_src: Some(out_src),
+            list,
             ..Default::default()
         };
         // Optional: enables the GPU dma-buf path. Absence just means shm-only.
@@ -605,8 +606,8 @@ impl Client {
         {
             state.dmabuf = globals.bind(&qh, 3..=4, ()).ok();
         }
-        queue.roundtrip(&mut state)?;
-        queue.roundtrip(&mut state)?;
+        queue.roundtrip(&mut state).context("Wayland roundtrip")?;
+        queue.roundtrip(&mut state).context("Wayland roundtrip")?;
 
         Ok(Self {
             queue,
@@ -627,22 +628,31 @@ impl Client {
         &self.state.outputs
     }
 
+    /// Whether this compositor can capture individual windows (the foreign-toplevel
+    /// image-capture source *and* list — wlroots >= 0.20 / Sway >= 1.12). When `false`,
+    /// only screen (output) capture works; window paths return a clear error.
+    pub fn can_capture_windows(&self) -> bool {
+        self.state.tl_src.is_some() && self.state.list.is_some()
+    }
+
     /// Drain pending Wayland events (new/closed toplevels, etc.) without blocking
     /// on a capture, so the source list stays current between capture rounds.
     pub fn refresh(&mut self) -> Result<()> {
-        self.queue.roundtrip(&mut self.state)?;
+        self.queue
+            .roundtrip(&mut self.state)
+            .context("Wayland roundtrip")?;
         Ok(())
     }
 
     /// Open a persistent capture session for a window. The session and its buffer
     /// live until [`Client::close_session`] (or the source disappears); re-arm a
     /// frame each cycle with [`Client::capture`].
-    pub fn open_toplevel_session(&mut self, t: &Toplevel) -> Result<SessionId> {
+    pub fn open_toplevel_session(&mut self, t: &Toplevel) -> Result<SessionId, CaptureError> {
         let src = self
             .state
             .tl_src
             .as_ref()
-            .unwrap()
+            .ok_or(CaptureError::WindowsUnsupported)?
             .create_source(&t.handle, &self.qh, ());
         self.open_session(src)
     }
@@ -672,7 +682,9 @@ impl Client {
 
         // Wait for the first buffer-constraints group (buffer_size + shm_format + done).
         loop {
-            self.queue.blocking_dispatch(&mut self.state)?;
+            self.queue
+                .blocking_dispatch(&mut self.state)
+                .context("Wayland dispatch")?;
             let d = self.state.sessions.get(&id).unwrap();
             if d.constraints_done || d.stopped {
                 break;
@@ -682,7 +694,9 @@ impl Client {
             self.state.sessions.remove(&id);
             session.destroy();
             src.destroy();
-            bail!("capture session stopped before first frame");
+            return Err(CaptureError::msg(
+                "capture session stopped before first frame",
+            ));
         }
 
         self.open.insert(
@@ -705,7 +719,11 @@ impl Client {
 
     /// One-shot: capture a single frame of `output`, then tear the session down.
     /// Blocks up to `budget`. For screenshots / timelapse ticks.
-    pub fn capture_output_once(&mut self, output: &Output, budget: Duration) -> Result<Frame> {
+    pub fn capture_output_once(
+        &mut self,
+        output: &Output,
+        budget: Duration,
+    ) -> Result<Frame, CaptureError> {
         let id = self.open_output_session(output)?;
         let r = self.poll_one(&id, budget);
         self.close_session(&id);
@@ -717,7 +735,7 @@ impl Client {
         &mut self,
         toplevel: &Toplevel,
         budget: Duration,
-    ) -> Result<Frame> {
+    ) -> Result<Frame, CaptureError> {
         let id = self.open_toplevel_session(toplevel)?;
         let r = self.poll_one(&id, budget);
         self.close_session(&id);
@@ -726,12 +744,12 @@ impl Client {
 
     /// Poll until session `id` yields a frame, it stops, or `budget` elapses.
     /// Frames from other open sessions in this round are discarded.
-    fn poll_one(&mut self, id: &SessionId, budget: Duration) -> Result<Frame> {
+    fn poll_one(&mut self, id: &SessionId, budget: Duration) -> Result<Frame, CaptureError> {
         let deadline = Instant::now() + budget;
         loop {
             let now = Instant::now();
             if now >= deadline {
-                bail!("capture: timed out");
+                return Err(CaptureError::CaptureTimeout);
             }
             let step = Duration::from_millis(50).min(deadline - now);
             let (frames, stopped) = self.poll(step);
@@ -741,7 +759,9 @@ impl Client {
                 }
             }
             if stopped.iter().any(|s| s == id) {
-                bail!("capture: session stopped before first frame");
+                return Err(CaptureError::msg(
+                    "capture: session stopped before first frame",
+                ));
             }
         }
     }
@@ -839,8 +859,10 @@ impl Client {
     /// goes quiet. Mirrors the crate's `blocking_read` but with a `poll` timeout
     /// so a desktop with no damage doesn't block us forever.
     fn dispatch_timeout(&mut self, budget: Duration) -> Result<()> {
-        self.queue.dispatch_pending(&mut self.state)?;
-        self.queue.flush()?;
+        self.queue
+            .dispatch_pending(&mut self.state)
+            .context("Wayland dispatch")?;
+        self.queue.flush().context("Wayland flush")?;
         let deadline = Instant::now() + budget;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -849,7 +871,9 @@ impl Client {
             }
             let Some(guard) = self.queue.prepare_read() else {
                 // Events already queued: dispatch them and re-check.
-                self.queue.dispatch_pending(&mut self.state)?;
+                self.queue
+                    .dispatch_pending(&mut self.state)
+                    .context("Wayland dispatch")?;
                 continue;
             };
             let ts = Timespec {
@@ -867,10 +891,12 @@ impl Client {
                 Ok(0) => break, // timeout: no events within the budget
                 Ok(_) => {
                     guard.read().context("reading Wayland events")?;
-                    self.queue.dispatch_pending(&mut self.state)?;
+                    self.queue
+                        .dispatch_pending(&mut self.state)
+                        .context("Wayland dispatch")?;
                 }
                 Err(rustix::io::Errno::INTR) => continue,
-                Err(e) => return Err(anyhow::anyhow!("poll: {e}")),
+                Err(e) => return Err(CaptureError::msg(format!("poll: {e}"))),
             }
         }
         Ok(())
@@ -895,7 +921,7 @@ impl Client {
             return Ok(());
         }
         if w == 0 || h == 0 {
-            bail!("dimensions de capture nulles");
+            return Err(CaptureError::msg("dimensions de capture nulles"));
         }
 
         // Prefer dma-buf (GPU); fall back to shm if it isn't available/usable.
@@ -1215,8 +1241,8 @@ pub fn activate_window(app_id: &str, title: &str, dup_index: usize) -> Result<()
 
     // Binding the manager makes the compositor advertise current toplevels.
     let mut st = ActState::default();
-    queue.roundtrip(&mut st)?;
-    queue.roundtrip(&mut st)?;
+    queue.roundtrip(&mut st).context("Wayland roundtrip")?;
+    queue.roundtrip(&mut st).context("Wayland roundtrip")?;
 
     let handle = st
         .toplevels
@@ -1231,7 +1257,7 @@ pub fn activate_window(app_id: &str, title: &str, dup_index: usize) -> Result<()
         .map(|(h, _, _)| h.clone())
         .with_context(|| format!("window to activate not found: {app_id} / {title}"))?;
     handle.activate(&seat);
-    queue.roundtrip(&mut st)?; // flush the activate request
+    queue.roundtrip(&mut st).context("Wayland roundtrip")?; // flush the activate request
     Ok(())
 }
 

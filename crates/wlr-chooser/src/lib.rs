@@ -5,6 +5,7 @@
 //! they do with the picked source (print a token vs. focus the window).
 
 pub mod chooser_cli;
+mod i18n;
 pub mod shell;
 pub mod switcher_cli;
 pub mod ui;
@@ -34,9 +35,7 @@ pub fn parse_grid(s: &str) -> Result<(u32, u32), String> {
 /// so re-pressing the bind would otherwise stack overlays.
 pub fn acquire_switch_lock() -> Option<std::fs::File> {
     use rustix::fs::{FlockOperation, flock};
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
+    let dir = wlr_capture::paths::runtime_dir();
     let f = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -65,4 +64,27 @@ pub fn run_overlay(opts: ui::Options, t0: Instant) -> anyhow::Result<Option<ui::
 
     let sel = out.lock().unwrap().take();
     Ok(sel)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_grid_reads_cols_and_rows() {
+        assert_eq!(parse_grid("4x3"), Ok((4, 3)));
+        assert_eq!(parse_grid("10X2"), Ok((10, 2)));
+        assert_eq!(parse_grid("2×5"), Ok((2, 5)));
+        // Surrounding whitespace on either factor is tolerated.
+        assert_eq!(parse_grid(" 4 x 3 "), Ok((4, 3)));
+    }
+
+    #[test]
+    fn parse_grid_rejects_bad_specs() {
+        assert!(parse_grid("4").unwrap_err().contains("COLSxROWS"));
+        assert!(parse_grid("0x3").unwrap_err().contains("columns"));
+        assert!(parse_grid("4x0").unwrap_err().contains("rows"));
+        assert!(parse_grid("axb").unwrap_err().contains("columns"));
+        assert!(parse_grid("").is_err());
+    }
 }

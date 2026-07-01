@@ -12,10 +12,10 @@
 //! icon badge or close, and `Esc` to close. The tile keeps the source aspect
 //! ratio; collapsing shrinks it, and any new frame while collapsed restores it.
 
+use crate::error::{CaptureError, Context, Result};
 use crate::render::{DmabufImporter, Gpu};
 use crate::stream;
 use crate::theme::Theme;
-use crate::tr;
 use crate::wl;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -76,6 +76,9 @@ struct Content {
     pending: Vec<PipMsg>,
     gone: bool,
     label: String,
+    /// Localised "loading…" placeholder and "source closed" message (caller-provided).
+    loading: String,
+    source_gone: String,
     theme: Theme,
     /// Region mode: the normalized sub-rectangle of the captured frame to show
     /// (the magnified region). `None` shows the whole frame (toplevel mirror).
@@ -137,7 +140,7 @@ impl Content {
         let tint = egui::Color32::from_white_alpha((opacity.clamp(0.0, 1.0) * 255.0) as u8);
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let p = ui.painter();
                 // The captured image, contained (letterboxed) in the tile. In region
                 // mode only `crop_uv` of the frame is shown, so the visible source
@@ -165,7 +168,7 @@ impl Content {
                     p.text(
                         full.center(),
                         egui::Align2::CENTER_CENTER,
-                        tr!("loading"),
+                        &self.loading,
                         egui::FontId::proportional(16.0),
                         t.text_dim,
                     );
@@ -176,7 +179,7 @@ impl Content {
                     p.text(
                         full.center(),
                         egui::Align2::CENTER_CENTER,
-                        tr!("pip-gone"),
+                        &self.source_gone,
                         egui::FontId::proportional(16.0),
                         t.text,
                     );
@@ -380,11 +383,15 @@ pub struct Config {
     /// Args to re-exec the current binary with when the user presses `r` (re-pick).
     /// Empty disables re-pick.
     pub relaunch: Vec<String>,
+    /// Localised "loading…" placeholder, shown until the first frame arrives.
+    pub loading: String,
+    /// Localised message shown when the mirrored source window closes.
+    pub source_gone: String,
 }
 
 /// Run the mirror until the source closes or the user quits.
-pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
-    let conn = Connection::connect_to_env()?;
+pub fn run(source: Source, config: Config) -> Result<()> {
+    let conn = Connection::connect_to_env().context("Wayland connection")?;
     run_on(&conn, source, config)
 }
 
@@ -392,25 +399,26 @@ pub fn run(source: Source, config: Config) -> anyhow::Result<()> {
 /// overlay (e.g. the region selector) reuses the same `wl_display` and `EGLDisplay`
 /// instead of opening a second one — a second EGL connection in one process can alias a
 /// freed display and fail (`eglCreateWindowSurface: BadAlloc`).
-pub fn run_on(conn: &Connection, source: Source, config: Config) -> anyhow::Result<()> {
+pub fn run_on(conn: &Connection, source: Source, config: Config) -> Result<()> {
     let Config {
         app_id,
         label,
         icon,
         relaunch,
+        loading,
+        source_gone,
     } = config;
-    let (globals, event_queue) = registry_queue_init::<State>(conn)?;
+    let (globals, event_queue) = registry_queue_init::<State>(conn).context("Wayland registry")?;
     let qh = event_queue.handle();
-    let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
+    let mut event_loop: EventLoop<State> = EventLoop::try_new().context("calloop event loop")?;
     let lh = event_loop.handle();
     WaylandSource::new(conn.clone(), event_queue)
         .insert(lh.clone())
-        .map_err(|e| anyhow::anyhow!("calloop wayland source: {e}"))?;
+        // calloop's `InsertError` isn't `Send + Sync`, so fold it into the message.
+        .map_err(|e| CaptureError::msg(format!("calloop wayland source: {e}")))?;
 
-    let compositor =
-        CompositorState::bind(&globals, &qh).map_err(|e| anyhow::anyhow!("wl_compositor: {e}"))?;
-    let xdg_shell =
-        XdgShell::bind(&globals, &qh).map_err(|e| anyhow::anyhow!("xdg-shell missing: {e}"))?;
+    let compositor = CompositorState::bind(&globals, &qh).context("wl_compositor")?;
+    let xdg_shell = XdgShell::bind(&globals, &qh).context("xdg-shell missing")?;
 
     // Region mode fixes the window aspect to the region and starts at region × zoom,
     // showing only the region's sub-rectangle of the captured output. Toplevel mode
@@ -465,7 +473,7 @@ pub fn run_on(conn: &Connection, source: Source, config: Config) -> anyhow::Resu
             state.on_msg(m);
         }
     })
-    .map_err(|e| anyhow::anyhow!("calloop channel source: {e}"))?;
+    .map_err(|e| CaptureError::msg(format!("calloop channel source: {e}")))?;
 
     let theme = Theme::load();
     let egui_ctx = egui::Context::default();
@@ -492,6 +500,8 @@ pub fn run_on(conn: &Connection, source: Source, config: Config) -> anyhow::Resu
             pending: Vec::new(),
             gone: false,
             label,
+            loading,
+            source_gone,
             theme,
             crop_uv,
         },
@@ -515,7 +525,9 @@ pub fn run_on(conn: &Connection, source: Source, config: Config) -> anyhow::Resu
     };
 
     while !state.closing {
-        event_loop.dispatch(Duration::from_millis(400), &mut state)?;
+        event_loop
+            .dispatch(Duration::from_millis(400), &mut state)
+            .context("event loop dispatch")?;
         if let Some(t) = state.gone_since
             && t.elapsed() >= GONE_LINGER
         {
@@ -1029,5 +1041,24 @@ pub fn capture_thread(source: stream::Source, mut sink: impl FnMut(PipMsg) -> bo
             sink(PipMsg::Gone);
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MIN_W, min_size_for};
+
+    #[test]
+    fn min_size_floors_width_and_derives_height_from_aspect() {
+        // Width is always the floor; height follows the aspect ratio.
+        assert_eq!(min_size_for(Some(1.0)), (MIN_W, MIN_W));
+        assert_eq!(min_size_for(Some(2.0)), (MIN_W, MIN_W / 2));
+        // Unknown aspect falls back to 16:9.
+        assert_eq!(min_size_for(None), (MIN_W, MIN_W * 9 / 16));
+        // A non-positive aspect is treated as unknown, not a divide-by-zero.
+        assert_eq!(min_size_for(Some(0.0)), min_size_for(None));
+        assert_eq!(min_size_for(Some(-3.0)), min_size_for(None));
+        // An extreme aspect never collapses height below 1px.
+        assert_eq!(min_size_for(Some(MIN_W as f32 * 4.0)).1, 1);
     }
 }

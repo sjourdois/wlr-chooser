@@ -17,9 +17,11 @@
 //! additionally takes single-key shortcuts (incl. `h` help, `c` colour picker) and text.
 
 use crate::ipc;
+use crate::keymap::{Action, Keymap, ModKind, Trigger};
 use crate::model;
 use crate::model::{Color, Document, Element, Recognized, ShapeKind, Tool, constrain, recognize};
 use crate::proto::Cmd;
+use crate::tr;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -51,7 +53,6 @@ use wayland_client::{
 };
 use wlr_capture::render::Gpu;
 use wlr_capture::theme::Theme;
-use wlr_capture::tr;
 use wlr_capture::{capture, wl};
 
 /// Default stroke colour and width before the user changes them.
@@ -196,17 +197,19 @@ struct Frame<'a> {
     /// Text being typed, if any: `(pos, buffer)` in global logical coordinates.
     text_edit: &'a Option<((f32, f32), String)>,
     theme: &'a Theme,
+    /// Resolved keybindings, for the help legend's key column.
+    keymap: &'a Keymap,
     tool: Tool,
     color: Color,
     width: f32,
     pointer: Option<(f64, f64)>,
     draw_mode: bool,
-    /// Pointer click-through active (Caps Lock).
+    /// Pointer click-through active (the pass-through bind).
     passthrough: bool,
-    /// Constrain modifier held (Ctrl): square/circle/axis-locked shapes.
-    ctrl: bool,
-    /// Spotlight modifier held (Shift): dim around a shape / a cursor flashlight.
-    shift: bool,
+    /// Constrain role active (the constrain bind): square/circle/axis-locked shapes.
+    constrain: bool,
+    /// Spotlight role active (the spotlight bind): dim around a shape / a cursor flashlight.
+    spotlight: bool,
     /// Radius of the cursor flashlight hole (logical px).
     spotlight_radius: f32,
     /// Veil opacity (0..255 alpha of black).
@@ -216,6 +219,8 @@ struct Frame<'a> {
     visible: bool,
     show_help: bool,
     show_palette: bool,
+    /// Whether screen capture is available (drives whether freeze/save are listed).
+    capture_available: bool,
     /// Status-chip attention pulse (0 = none … 1 = peak).
     flash: f32,
     /// Index of the selected element (drawn with a handle outline), if any.
@@ -234,6 +239,8 @@ struct State {
     /// A pre-made empty region: set as the input region for click-through.
     empty_region: Region,
     theme: Theme,
+    /// Resolved keybindings (`~/.config/wlr-draw/keys.toml`, or the built-in defaults).
+    keymap: Keymap,
 
     doc: Document,
     tool: Tool,
@@ -241,12 +248,17 @@ struct State {
     width: f32,
     /// Draw mode (input grabbed) vs click-through.
     draw_mode: bool,
-    /// Pointer click-through while Caps Lock is on (in draw mode).
+    /// Pointer click-through active (the pass-through bind), in draw mode.
     passthrough: bool,
-    /// Constrain modifier (Ctrl) held: square/circle/axis-locked shapes.
+    /// Constrain role active (the constrain bind): square/circle/axis-locked shapes.
+    constrain_active: bool,
+    /// Spotlight role active (the spotlight bind): dim everything around the shape being
+    /// drawn, or a flashlight hole around the cursor while idle.
+    spotlight_active: bool,
+    /// Physical Ctrl / Shift state, read only for the arrow-nudge step granularity
+    /// (Shift = 1px, Ctrl = big) — kept on the real modifiers regardless of how the
+    /// constrain / spotlight roles are rebound.
     ctrl_held: bool,
-    /// Spotlight modifier (Shift) held: dim everything around the shape being drawn, or a
-    /// flashlight hole around the cursor while idle.
     shift_held: bool,
     /// Radius of the cursor flashlight hole (logical px), tuned with the wheel / i / k.
     spotlight_radius: f32,
@@ -260,6 +272,10 @@ struct State {
     /// Lazily-opened capture connection (separate from the overlay's), reused across
     /// freezes. Uses shm, so it never touches the overlay's EGL contexts.
     capture_client: Option<wl::Client>,
+    /// Whether this compositor can capture the screen (ext-image-copy-capture + an
+    /// output source, wlroots >= 0.19). Freeze and save need it; when `false` they are
+    /// hidden from the help/tray and no-op with a clear message (issue #1).
+    capture_available: bool,
     /// Whether annotations are shown (visibility toggle).
     visible: bool,
     /// On-screen key legend (the `h` shortcut).
@@ -302,20 +318,22 @@ impl State {
             gesture: &self.gesture,
             text_edit: &self.text_edit,
             theme: &self.theme,
+            keymap: &self.keymap,
             tool: self.tool,
             color: self.color,
             width: self.width,
             pointer: self.pointer_pos,
             draw_mode: self.draw_mode,
             passthrough: self.passthrough,
-            ctrl: self.ctrl_held,
-            shift: self.shift_held,
+            constrain: self.constrain_active,
+            spotlight: self.spotlight_active,
             spotlight_radius: self.spotlight_radius,
             spotlight_dim: self.spotlight_dim.round() as u8,
             flashlight: !self.spotlight_latched,
             visible: self.visible,
             show_help: self.show_help,
             show_palette: self.show_palette,
+            capture_available: self.capture_available,
             flash,
             selected: self.selected,
         };
@@ -398,9 +416,38 @@ impl State {
         self.dirty = true;
     }
 
+    /// Toggle the constrain role (square/circle/axis-locked shapes). Driven by the
+    /// configured trigger — a held modifier, or a held key.
+    fn set_constrain(&mut self, on: bool) {
+        if on == self.constrain_active {
+            return;
+        }
+        self.constrain_active = on;
+        if !matches!(self.gesture, Gesture::None) {
+            self.dirty = true; // refresh the constrained preview in place
+        }
+    }
+
+    /// Toggle the spotlight role (cursor flashlight / dim around a shape). Driven by the
+    /// configured trigger. Leaving it re-arms the idle torch, like releasing Shift did.
+    fn set_spotlight(&mut self, on: bool) {
+        if on == self.spotlight_active {
+            return;
+        }
+        self.spotlight_active = on;
+        if !on {
+            self.spotlight_latched = false; // a fresh activation re-arms the torch
+        }
+        self.dirty = true;
+    }
+
     /// Toggle the freeze-frame backdrop: capture every output once and show it frozen so
     /// the user can annotate a still image; toggling again (or Esc) returns to live.
     fn toggle_freeze(&mut self) {
+        if !self.capture_available {
+            eprintln!("wlr-draw: {}", tr!("draw-capture-unavailable"));
+            return;
+        }
         if self.frozen {
             self.unfreeze();
         } else if let Err(e) = self.freeze() {
@@ -457,6 +504,10 @@ impl State {
     /// layout). The capture grabs the composited output, so the overlay's strokes are
     /// baked into the image.
     fn save_screenshot(&mut self, path: Option<String>) {
+        if !self.capture_available {
+            eprintln!("wlr-draw: {}", tr!("draw-capture-unavailable"));
+            return;
+        }
         match self.do_save(path) {
             Ok(p) => eprintln!("wlr-draw: saved {}", p.display()),
             Err(e) => eprintln!("wlr-draw: save failed: {e}"),
@@ -740,8 +791,8 @@ impl State {
             Gesture::Move { start, applied } => {
                 if let Some(idx) = self.selected {
                     let raw = (g.0 - start.0, g.1 - start.1);
-                    // Ctrl locks the move to the dominant axis (horizontal or vertical).
-                    let target = if self.ctrl_held {
+                    // Constrain locks the move to the dominant axis (horizontal or vertical).
+                    let target = if self.constrain_active {
                         if raw.0.abs() >= raw.1.abs() {
                             (raw.0, 0.0)
                         } else {
@@ -793,13 +844,13 @@ impl State {
                 });
             }
             Gesture::Shape(kind, start) => {
-                let b = if self.ctrl_held {
+                let b = if self.constrain_active {
                     constrain(kind, start, g)
                 } else {
                     g
                 };
-                // Holding Shift turns a closed shape into its spotlight (dim around it).
-                let kind = match self.shift_held.then(|| kind.spotlight()).flatten() {
+                // The spotlight role turns a closed shape into its spotlight (dim around it).
+                let kind = match self.spotlight_active.then(|| kind.spotlight()).flatten() {
                     Some(spot) => spot,
                     None => kind,
                 };
@@ -815,8 +866,8 @@ impl State {
                 }
             }
             Gesture::SnapEllipse { center, circle } => {
-                let (rx, ry) = snap_radii(center, g, circle || self.ctrl_held);
-                let kind = if self.shift_held {
+                let (rx, ry) = snap_radii(center, g, circle || self.constrain_active);
+                let kind = if self.spotlight_active {
                     ShapeKind::SpotlightEllipse
                 } else {
                     ShapeKind::Ellipse
@@ -903,12 +954,12 @@ impl State {
         if !is_arrow {
             self.end_move_session();
         }
-        // Local shortcuts (by letter, so they follow the keyboard layout).
-        match event.keysym {
-            // Arrow keys nudge the selected element. Shift = 1px (pixel-precise), Ctrl =
-            // big step, plain = medium. Shift is free here (spotlight is gated to the
-            // drawing tools).
-            Keysym::Left | Keysym::Right | Keysym::Up | Keysym::Down if self.selected.is_some() => {
+        // --- Reserved controls (not rebindable) ---
+        // Arrow keys nudge the selected element. Shift = 1px (pixel-precise), Ctrl = big
+        // step, plain = medium — read from the *physical* modifiers, independent of how
+        // the constrain / spotlight roles are bound.
+        if is_arrow {
+            if self.selected.is_some() {
                 let step = if self.shift_held {
                     1.0
                 } else if self.ctrl_held {
@@ -924,63 +975,107 @@ impl State {
                 };
                 self.nudge_selected(dx, dy);
             }
-            // Space toggles the freeze-frame backdrop.
-            Keysym::space | Keysym::KP_Space => self.toggle_freeze(),
-            // Esc peels back one layer at a time (popup → frozen → draw mode).
-            Keysym::Escape => {
-                if self.show_palette {
-                    self.show_palette = false;
-                    self.dirty = true;
-                } else if self.show_help {
-                    self.show_help = false;
-                    self.dirty = true;
-                } else if self.frozen {
-                    self.unfreeze();
-                } else {
-                    self.set_draw_mode(false);
-                }
-            }
-            Keysym::h => {
-                self.show_help = !self.show_help;
+            return;
+        }
+        // Esc peels back one layer at a time (popup → frozen → draw mode).
+        if event.keysym == Keysym::Escape {
+            if self.show_palette {
+                self.show_palette = false;
                 self.dirty = true;
+            } else if self.show_help {
+                self.show_help = false;
+                self.dirty = true;
+            } else if self.frozen {
+                self.unfreeze();
+            } else {
+                self.set_draw_mode(false);
             }
-            Keysym::c => {
+            return;
+        }
+        // Spotlight tuning cluster (i/j/k/l), live only while the spotlight role is active:
+        // an ijkl cluster, layout-proof unlike +/-. The wheel does the same.
+        if self.spotlight_active {
+            match event.keysym {
+                Keysym::i | Keysym::I => {
+                    self.adjust_spotlight_radius(SPOTLIGHT_RADIUS_STEP);
+                    return;
+                }
+                Keysym::k | Keysym::K => {
+                    self.adjust_spotlight_radius(-SPOTLIGHT_RADIUS_STEP);
+                    return;
+                }
+                Keysym::l | Keysym::L => {
+                    self.adjust_spotlight_dim(-SPOTLIGHT_DIM_STEP); // lighter
+                    return;
+                }
+                Keysym::j | Keysym::J => {
+                    self.adjust_spotlight_dim(SPOTLIGHT_DIM_STEP); // darker
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // --- Configurable bindings ---
+        let ks = event.keysym;
+        // Held roles bound to a key: pass-through toggles (parity with the Caps latch),
+        // constrain / spotlight engage while held (released in `on_key_release`).
+        if self.keymap.passthrough == Trigger::Key(ks) {
+            self.set_passthrough(!self.passthrough);
+            return;
+        }
+        if self.keymap.constrain == Trigger::Key(ks) {
+            self.set_constrain(true);
+            return;
+        }
+        if self.keymap.spotlight == Trigger::Key(ks) {
+            self.set_spotlight(true);
+            return;
+        }
+        // Discrete actions.
+        if let Some(action) = self.keymap.action_for_key(ks) {
+            self.do_action(action);
+        }
+    }
+
+    /// Release handler for held roles bound to a regular key. A no-op for everything else
+    /// (discrete actions only fire on press); pass-through is a toggle, so it ignores
+    /// release too.
+    fn on_key_release(&mut self, ks: Keysym) {
+        if self.keymap.constrain == Trigger::Key(ks) {
+            self.set_constrain(false);
+        }
+        if self.keymap.spotlight == Trigger::Key(ks) {
+            self.set_spotlight(false);
+        }
+    }
+
+    /// Dispatch a discrete keymap action.
+    fn do_action(&mut self, action: Action) {
+        match action {
+            Action::Pen => self.apply_cmd(Cmd::Tool(Tool::Pen)),
+            Action::Rect => self.apply_cmd(Cmd::Tool(Tool::Rect)),
+            Action::Mask => self.apply_cmd(Cmd::Tool(Tool::Mask)),
+            Action::Arrow => self.apply_cmd(Cmd::Tool(Tool::Arrow)),
+            Action::Text => self.apply_cmd(Cmd::Tool(Tool::Text)),
+            Action::Move => self.apply_cmd(Cmd::Tool(Tool::Move)),
+            Action::Eraser => self.apply_cmd(Cmd::Tool(Tool::Eraser)),
+            Action::Palette => {
                 self.show_palette = !self.show_palette;
                 self.dirty = true;
             }
-            Keysym::p => self.apply_cmd(Cmd::Tool(Tool::Pen)),
-            Keysym::r => self.apply_cmd(Cmd::Tool(Tool::Rect)),
-            Keysym::m => self.apply_cmd(Cmd::Tool(Tool::Mask)),
-            Keysym::a => self.apply_cmd(Cmd::Tool(Tool::Arrow)),
-            Keysym::t => self.apply_cmd(Cmd::Tool(Tool::Text)),
-            Keysym::e => self.apply_cmd(Cmd::Tool(Tool::Eraser)),
-            Keysym::s => self.apply_cmd(Cmd::Tool(Tool::Move)),
-            Keysym::u => self.apply_cmd(Cmd::Undo),
-            Keysym::y => self.apply_cmd(Cmd::Redo),
-            Keysym::v => self.apply_cmd(Cmd::Visibility),
-            Keysym::w => self.apply_cmd(Cmd::Save(None)),
-            Keysym::Delete => self.apply_cmd(Cmd::Clear),
-            Keysym::plus | Keysym::equal | Keysym::KP_Add => {
-                self.apply_cmd(Cmd::Width(self.width + 2.0))
+            Action::Undo => self.apply_cmd(Cmd::Undo),
+            Action::Redo => self.apply_cmd(Cmd::Redo),
+            Action::Visibility => self.apply_cmd(Cmd::Visibility),
+            Action::Save => self.apply_cmd(Cmd::Save(None)),
+            Action::Help => {
+                self.show_help = !self.show_help;
+                self.dirty = true;
             }
-            Keysym::minus | Keysym::KP_Subtract => {
-                self.apply_cmd(Cmd::Width((self.width - 2.0).max(1.0)))
-            }
-            // Spotlight controls (Shift held): an ijkl cluster, layout-proof unlike +/-.
-            // The wheel does the same (and tilt-wheel for dim).
-            Keysym::i | Keysym::I if self.shift_held => {
-                self.adjust_spotlight_radius(SPOTLIGHT_RADIUS_STEP)
-            }
-            Keysym::k | Keysym::K if self.shift_held => {
-                self.adjust_spotlight_radius(-SPOTLIGHT_RADIUS_STEP)
-            }
-            Keysym::l | Keysym::L if self.shift_held => {
-                self.adjust_spotlight_dim(-SPOTLIGHT_DIM_STEP) // lighter
-            }
-            Keysym::j | Keysym::J if self.shift_held => {
-                self.adjust_spotlight_dim(SPOTLIGHT_DIM_STEP) // darker
-            }
-            _ => {}
+            Action::Clear => self.apply_cmd(Cmd::Clear),
+            Action::WidthInc => self.apply_cmd(Cmd::Width(self.width + 2.0)),
+            Action::WidthDec => self.apply_cmd(Cmd::Width((self.width - 2.0).max(1.0))),
+            Action::Freeze => self.toggle_freeze(),
         }
     }
 
@@ -1038,6 +1133,7 @@ pub fn run() -> anyhow::Result<()> {
     let lh = event_loop.handle();
 
     let theme = Theme::load();
+    let keymap = Keymap::load();
     let mut state = State {
         registry_state: RegistryState::new(&globals),
         seat_state: SeatState::new(&globals, &qh),
@@ -1048,12 +1144,15 @@ pub fn run() -> anyhow::Result<()> {
         surfaces: Vec::new(),
         empty_region,
         theme,
+        keymap,
         doc: Document::new(),
         tool: Tool::Pen,
         color: DEFAULT_COLOR,
         width: DEFAULT_WIDTH,
         draw_mode: false,
         passthrough: false,
+        constrain_active: false,
+        spotlight_active: false,
         ctrl_held: false,
         shift_held: false,
         spotlight_radius: DEFAULT_SPOTLIGHT_RADIUS,
@@ -1061,6 +1160,13 @@ pub fn run() -> anyhow::Result<()> {
         spotlight_latched: false,
         frozen: false,
         capture_client: None,
+        // Probe once whether the screen can be captured (ext-image-copy-capture + an
+        // output source). Freeze/save need it; on compositors without it we hide those
+        // from the help/tray rather than failing at first use (issue #1). Drawing and
+        // click-through need no capture and always work.
+        capture_available: wl::Client::connect()
+            .map(|c| !c.outputs().is_empty())
+            .unwrap_or(false),
         visible: true,
         show_help: false,
         show_palette: false,
@@ -1134,7 +1240,8 @@ pub fn run() -> anyhow::Result<()> {
     #[cfg(feature = "tray")]
     {
         ipc::serve(listener, tx.clone());
-        state.tray = crate::tray::spawn(tx, state.color, state.tool);
+        let shortcuts = shortcut_rows(&state.keymap, state.capture_available);
+        state.tray = crate::tray::spawn(tx, state.color, state.tool, shortcuts);
     }
     #[cfg(not(feature = "tray"))]
     ipc::serve(listener, tx);
@@ -1144,6 +1251,19 @@ pub fn run() -> anyhow::Result<()> {
         }
     })
     .map_err(|e| anyhow::anyhow!("calloop channel source: {e}"))?;
+
+    // A startup line so `journalctl --user -t wlr-draw` shows the daemon came up (and its
+    // capture verdict) — otherwise the log stays silent until the first error.
+    eprintln!(
+        "wlr-draw: daemon ready on {} output{} (screen capture {})",
+        state.surfaces.len(),
+        if state.surfaces.len() == 1 { "" } else { "s" },
+        if state.capture_available {
+            "available"
+        } else {
+            "unavailable"
+        },
+    );
 
     while !state.quit {
         // Tick fast enough to animate: while a freehand stroke is in flight (dwell to
@@ -1188,7 +1308,7 @@ fn paint(
 ) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let p = ui.painter();
             let off = egui::vec2(-lx, -ly);
 
@@ -1325,6 +1445,16 @@ fn paint_shape(
     }
 }
 
+/// Arrowhead length for a shaft of `len` px drawn at stroke `width`: tied to the stroke
+/// width (so heads stay consistent), at least 10px for readability, but never more than
+/// 60% of the shaft so it can't dwarf a short arrow. On a very short arrow the 60% cap
+/// wins over the 10px floor — hence `cap.min(10.0)` as the lower bound, so the clamp never
+/// gets `min > max` (which panics).
+fn arrowhead_len(width: f32, len: f32) -> f32 {
+    let cap = 0.6 * len;
+    (width * 4.5).clamp(cap.min(10.0), cap)
+}
+
 /// Draw an arrow from `pa` to `pb`: a shaft plus an arrowhead whose size scales with the
 /// stroke `width` (not the arrow's length), so short and long arrows keep a consistent
 /// head.
@@ -1337,8 +1467,7 @@ fn draw_arrow(p: &egui::Painter, pa: egui::Pos2, pb: egui::Pos2, color: egui::Co
         return;
     }
     let dir = v / len;
-    // Head length tied to the stroke width, clamped so it never dwarfs a short arrow.
-    let head = (width * 4.5).clamp(10.0, 0.6 * len);
+    let head = arrowhead_len(width, len);
     let spread = 0.45_f32; // ~26° half-angle
     let (sin, cos) = spread.sin_cos();
     // Two barbs: -dir rotated by ±spread.
@@ -1369,7 +1498,7 @@ fn paint_gesture(p: &egui::Painter, off: egui::Vec2, frame: &Frame) {
         }
         Gesture::Shape(kind, start) => {
             if let Some((gx, gy)) = frame.pointer {
-                let b = if frame.ctrl {
+                let b = if frame.constrain {
                     constrain(*kind, *start, (gx as f32, gy as f32))
                 } else {
                     (gx as f32, gy as f32)
@@ -1379,7 +1508,8 @@ fn paint_gesture(p: &egui::Painter, off: egui::Vec2, frame: &Frame) {
         }
         Gesture::SnapEllipse { center, circle } => {
             if let Some((gx, gy)) = frame.pointer {
-                let (rx, ry) = snap_radii(*center, (gx as f32, gy as f32), *circle || frame.ctrl);
+                let (rx, ry) =
+                    snap_radii(*center, (gx as f32, gy as f32), *circle || frame.constrain);
                 paint_shape(
                     p,
                     off,
@@ -1527,7 +1657,7 @@ fn paint_union_rim(p: &egui::Painter, holes: &[Hole]) {
 /// tool (and for the eraser).
 fn spotlight_active(frame: &Frame) -> bool {
     frame.draw_mode
-        && frame.shift
+        && frame.spotlight
         && !frame.passthrough
         && frame.text_edit.is_none()
         && matches!(
@@ -1578,7 +1708,7 @@ fn live_spotlight_hole(frame: &Frame, off: egui::Vec2) -> Option<Hole> {
     let (gx, gy) = (gx as f32, gy as f32);
     match frame.gesture {
         Gesture::Shape(kind, start) if kind.spotlight().is_some() => {
-            let b = if frame.ctrl {
+            let b = if frame.constrain {
                 constrain(*kind, *start, (gx, gy))
             } else {
                 (gx, gy)
@@ -1589,7 +1719,7 @@ fn live_spotlight_hole(frame: &Frame, off: egui::Vec2) -> Option<Hole> {
             )))
         }
         Gesture::SnapEllipse { center, circle } => {
-            let (rx, ry) = snap_radii(*center, (gx, gy), *circle || frame.ctrl);
+            let (rx, ry) = snap_radii(*center, (gx, gy), *circle || frame.constrain);
             Some(Hole::Ellipse {
                 center: local(center.0, center.1, off),
                 rx,
@@ -1882,52 +2012,116 @@ fn paint_palette(p: &egui::Painter, ui: &egui::Ui, frame: &Frame) {
     }
 }
 
-/// The full key/gesture cheat-sheet as `(key, description)` rows — one tool per line so
-/// every shortcut is explicit. Shared by the on-screen [`paint_help`] legend and the
-/// tray's Shortcuts submenu, so they never drift apart.
-pub(crate) fn shortcut_rows() -> Vec<(&'static str, String)> {
-    vec![
-        ("p", tool_label(Tool::Pen)),
-        ("r", tool_label(Tool::Rect)),
-        ("m", tool_label(Tool::Mask)),
-        ("a", tool_label(Tool::Arrow)),
-        ("t", tool_label(Tool::Text)),
-        ("e", tool_label(Tool::Eraser)),
-        ("s", tool_label(Tool::Move)),
-        ("c", tr!("draw-help-color")),
-        ("u / y", tr!("draw-help-undo")),
-        ("+ / -", tr!("draw-help-width")),
-        ("Del", tr!("draw-help-clear")),
-        ("v", tr!("draw-help-visibility")),
-        ("w", tr!("draw-help-save")),
-        ("h", tr!("draw-help-help")),
-        ("Esc", tr!("draw-help-leave")),
-        ("Ctrl", tr!("draw-help-constrain")),
-        ("Shift", tr!("draw-help-spotlight")),
-        ("wheel", tr!("draw-help-spotlight-tune")),
-        ("Space", tr!("draw-help-freeze")),
-        ("R-drag", tr!("draw-help-rightmove")),
-        ("↑↓←→", tr!("draw-help-move")),
-        ("Caps", tr!("draw-help-passthrough")),
-        ("drag", tr!("draw-help-draw")),
-        ("hold", tr!("draw-help-snap")),
-        ("type", tr!("draw-help-text")),
-    ]
+/// One line of the cheat-sheet: a section header, or a `(key, description)` entry.
+#[derive(Clone)]
+pub(crate) enum HelpRow {
+    Group(String),
+    Entry(String, String),
 }
 
-/// Paint the top-left key legend (the `h` shortcut). Keys are shown as fixed caps; the
-/// descriptions are localised.
+/// The full key/gesture cheat-sheet, grouped into sections. Key labels are derived from the
+/// live [`Keymap`] so they reflect the user's bindings, and descriptions are localised and
+/// key-free (the key lives in its own column). Shared by the on-screen [`paint_help`] legend
+/// and the tray's Shortcuts submenu, so they never drift apart.
+pub(crate) fn shortcut_rows(km: &Keymap, capture_available: bool) -> Vec<HelpRow> {
+    use crate::keymap::trigger_label;
+    let key = |a| km.label_for(a);
+    let mut rows = vec![HelpRow::Group(tr!("draw-help-group-tools"))];
+    let mut entry = |k: String, d: String| rows.push(HelpRow::Entry(k, d));
+    entry(key(Action::Pen), tool_label(Tool::Pen));
+    entry(key(Action::Rect), tool_label(Tool::Rect));
+    entry(key(Action::Mask), tool_label(Tool::Mask));
+    entry(key(Action::Arrow), tool_label(Tool::Arrow));
+    entry(key(Action::Text), tool_label(Tool::Text));
+    entry(key(Action::Move), tool_label(Tool::Move));
+    entry(key(Action::Eraser), tool_label(Tool::Eraser));
+
+    rows.push(HelpRow::Group(tr!("draw-help-group-edit")));
+    rows.push(HelpRow::Entry(key(Action::Palette), tr!("draw-help-color")));
+    rows.push(HelpRow::Entry(
+        format!("{} / {}", key(Action::Undo), key(Action::Redo)),
+        tr!("draw-help-undo"),
+    ));
+    rows.push(HelpRow::Entry(
+        format!("{} / {}", key(Action::WidthInc), key(Action::WidthDec)),
+        tr!("draw-help-width"),
+    ));
+    rows.push(HelpRow::Entry(key(Action::Clear), tr!("draw-help-clear")));
+    rows.push(HelpRow::Entry(
+        key(Action::Visibility),
+        tr!("draw-help-visibility"),
+    ));
+
+    rows.push(HelpRow::Group(tr!("draw-help-group-screen")));
+    // Save and Freeze need screen capture; list them only where they work (issue #1).
+    if capture_available {
+        rows.push(HelpRow::Entry(key(Action::Save), tr!("draw-help-save")));
+        rows.push(HelpRow::Entry(key(Action::Freeze), tr!("draw-help-freeze")));
+    }
+    rows.push(HelpRow::Entry(key(Action::Help), tr!("draw-help-help")));
+    rows.push(HelpRow::Entry("Esc".into(), tr!("draw-help-leave")));
+
+    rows.push(HelpRow::Group(tr!("draw-help-group-hold")));
+    rows.push(HelpRow::Entry(
+        trigger_label(km.constrain),
+        tr!("draw-help-constrain"),
+    ));
+    rows.push(HelpRow::Entry(
+        trigger_label(km.spotlight),
+        tr!("draw-help-spotlight"),
+    ));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-wheel"),
+        tr!("draw-help-spotlight-tune"),
+    ));
+    rows.push(HelpRow::Entry(
+        trigger_label(km.passthrough),
+        tr!("draw-help-passthrough"),
+    ));
+
+    rows.push(HelpRow::Group(tr!("draw-help-group-pointer")));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-drag"),
+        tr!("draw-help-draw"),
+    ));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-hold"),
+        tr!("draw-help-snap"),
+    ));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-rdrag"),
+        tr!("draw-help-rightmove"),
+    ));
+    rows.push(HelpRow::Entry("↑↓←→".into(), tr!("draw-help-move")));
+    rows.push(HelpRow::Entry(
+        tr!("draw-help-key-type"),
+        tr!("draw-help-text"),
+    ));
+    rows
+}
+
+/// Paint the top-left key legend (the `h` shortcut): grouped sections with an accent header,
+/// a monospace key column and localised descriptions.
 fn paint_help(p: &egui::Painter, _ui: &egui::Ui, frame: &Frame) {
     let t = frame.theme;
-    let rows = shortcut_rows();
+    let rows = shortcut_rows(frame.keymap, frame.capture_available);
     let key_font = egui::FontId::monospace(13.0);
     let desc_font = egui::FontId::proportional(13.0);
+    let group_font = egui::FontId::proportional(12.0);
     let line_h = 19.0;
+    let group_gap = 8.0; // extra space above each section header
     let key_col = 60.0; // width reserved for the key column
     let origin = egui::pos2(28.0, 28.0);
+    let content_h: f32 = rows
+        .iter()
+        .map(|r| match r {
+            HelpRow::Group(_) => line_h + group_gap,
+            HelpRow::Entry(..) => line_h,
+        })
+        .sum();
     let panel = egui::Rect::from_min_size(
         origin - egui::vec2(12.0, 12.0),
-        egui::vec2(key_col + 270.0, rows.len() as f32 * line_h + 34.0),
+        egui::vec2(key_col + 280.0, content_h + 40.0),
     );
     p.rect_filled(panel, 10.0, egui::Color32::from_black_alpha(220));
     p.text(
@@ -1938,22 +2132,37 @@ fn paint_help(p: &egui::Painter, _ui: &egui::Ui, frame: &Frame) {
         t.accent,
     );
     let mut y = origin.y + 26.0;
-    for (key, desc) in rows {
-        p.text(
-            egui::pos2(origin.x, y),
-            egui::Align2::LEFT_TOP,
-            key,
-            key_font.clone(),
-            egui::Color32::from_white_alpha(230),
-        );
-        p.text(
-            egui::pos2(origin.x + key_col, y),
-            egui::Align2::LEFT_TOP,
-            desc,
-            desc_font.clone(),
-            t.text,
-        );
-        y += line_h;
+    for row in &rows {
+        match row {
+            HelpRow::Group(name) => {
+                y += group_gap;
+                p.text(
+                    egui::pos2(origin.x, y),
+                    egui::Align2::LEFT_TOP,
+                    name,
+                    group_font.clone(),
+                    t.accent,
+                );
+                y += line_h;
+            }
+            HelpRow::Entry(key, desc) => {
+                p.text(
+                    egui::pos2(origin.x + 10.0, y),
+                    egui::Align2::LEFT_TOP,
+                    key,
+                    key_font.clone(),
+                    egui::Color32::from_white_alpha(230),
+                );
+                p.text(
+                    egui::pos2(origin.x + key_col, y),
+                    egui::Align2::LEFT_TOP,
+                    desc,
+                    desc_font.clone(),
+                    t.text,
+                );
+                y += line_h;
+            }
+        }
     }
 }
 
@@ -2120,8 +2329,11 @@ impl KeyboardHandler for State {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        _: KeyEvent,
+        event: KeyEvent,
     ) {
+        // Only held roles bound to a regular key care about release (to disengage); for
+        // everything else this is a no-op, so discrete actions never double-step.
+        self.on_key_release(event.keysym);
     }
     fn repeat_key(
         &mut self,
@@ -2145,24 +2357,33 @@ impl KeyboardHandler for State {
         _: RawModifiers,
         _: u32,
     ) {
-        // Caps Lock toggles pointer click-through to the apps below (without leaving
-        // draw mode). Ctrl constrains the shape being drawn (square/circle/axis).
-        self.set_passthrough(modifiers.caps_lock);
-        if self.ctrl_held != modifiers.ctrl {
-            self.ctrl_held = modifiers.ctrl;
-            if !matches!(self.gesture, Gesture::None) {
-                self.dirty = true; // refresh the constrained preview in place
-            }
+        // Physical Ctrl / Shift drive only the arrow-nudge step granularity, kept on the
+        // real modifiers regardless of how the constrain / spotlight roles are bound.
+        self.ctrl_held = modifiers.ctrl;
+        self.shift_held = modifiers.shift;
+        // Roles whose trigger is a modifier follow that modifier's state; roles bound to a
+        // key are driven from `on_key` / `on_key_release` instead. `set_*` no-op when the
+        // value is unchanged, so this is cheap to call on every modifier event.
+        if let Trigger::Mod(m) = self.keymap.passthrough {
+            self.set_passthrough(mod_active(&modifiers, m));
         }
-        if self.shift_held != modifiers.shift {
-            // Shift toggles spotlight mode: the cursor flashlight appears/disappears and
-            // an in-flight shape switches between outline and spotlight preview.
-            self.shift_held = modifiers.shift;
-            if !modifiers.shift {
-                self.spotlight_latched = false; // a fresh Shift press re-arms the torch
-            }
-            self.dirty = true;
+        if let Trigger::Mod(m) = self.keymap.constrain {
+            self.set_constrain(mod_active(&modifiers, m));
         }
+        if let Trigger::Mod(m) = self.keymap.spotlight {
+            self.set_spotlight(mod_active(&modifiers, m));
+        }
+    }
+}
+
+/// Read one modifier's state from the xkb modifier set.
+fn mod_active(m: &Modifiers, kind: ModKind) -> bool {
+    match kind {
+        ModKind::Ctrl => m.ctrl,
+        ModKind::Shift => m.shift,
+        ModKind::Alt => m.alt,
+        ModKind::Logo => m.logo,
+        ModKind::Caps => m.caps_lock,
     }
 }
 
@@ -2267,7 +2488,7 @@ impl PointerHandler for State {
                     horizontal,
                     vertical,
                     ..
-                } if self.shift_held && self.draw_mode && !self.passthrough => {
+                } if self.spotlight_active && self.draw_mode && !self.passthrough => {
                     let v = axis_notch(&vertical);
                     if v != 0.0 {
                         self.adjust_spotlight_radius(-v * SPOTLIGHT_RADIUS_STEP); // up = bigger
@@ -2306,3 +2527,27 @@ delegate_keyboard!(State);
 delegate_pointer!(State);
 delegate_layer!(State);
 delegate_registry!(State);
+
+#[cfg(test)]
+mod tests {
+    use super::arrowhead_len;
+
+    #[test]
+    fn arrowhead_never_panics_and_stays_within_the_shaft() {
+        // Regression: a short arrow (len < 16.67) made `0.6*len` fall below the 10px
+        // floor, so `clamp(10.0, 0.6*len)` panicked with min > max. The head must instead
+        // shrink to the 60% cap. `len ≈ 1.28` reproduces the original panic.
+        assert!((arrowhead_len(6.0, 1.276) - 0.6 * 1.276).abs() < 1e-4);
+        // The head never exceeds 60% of the shaft, whatever the width.
+        for &(w, len) in &[(1.0, 5.0), (6.0, 10.0), (200.0, 3.0), (2.0, 16.6)] {
+            let h = arrowhead_len(w, len);
+            assert!(
+                h.is_finite() && h <= 0.6 * len + 1e-4,
+                "w={w} len={len} h={h}"
+            );
+        }
+        // A normal arrow keeps the width-scaled head within [10, 60% len].
+        assert_eq!(arrowhead_len(6.0, 100.0), 27.0); // 6*4.5, within [10, 60]
+        assert_eq!(arrowhead_len(1.0, 100.0), 10.0); // 4.5 floored to 10
+    }
+}

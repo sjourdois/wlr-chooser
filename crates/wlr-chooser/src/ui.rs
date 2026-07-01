@@ -4,13 +4,14 @@
 //! in. Toplevel capture is occlusion-independent, so showing our own window
 //! first is fine.
 
+use crate::tr;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wlr_capture::render::DmabufImporter;
 use wlr_capture::theme::Theme;
-use wlr_capture::{icons, tr, wl};
+use wlr_capture::{icons, wl};
 
 /// Shared slot where the chosen source lands; read by `main` after the window closes.
 pub type Outcome = Arc<Mutex<Option<Selection>>>;
@@ -1042,7 +1043,7 @@ impl App {
         let mut chosen = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 for (i, rect) in &rects {
                     let s = vis[*i];
                     let resp =
@@ -1232,7 +1233,7 @@ impl App {
         let mut hovered = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.painter().rect_filled(panel, 16.0, self.theme.card);
 
                 // Highlighted window's name, centred above the row.

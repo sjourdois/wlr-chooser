@@ -164,12 +164,14 @@ output. Exits 1 when nothing matches, like `grep`.
 
 ## Requirements
 
-A wlroots compositor exposing `ext-image-copy-capture-v1` with the output **and**
-foreign-toplevel capture sources — **Sway ≥ 1.12 / wlroots ≥ 0.20** (the floor for the
-window source; the tools open it even for screen captures). The frozen overlays (`color`,
-`loupe`, `region`) use `zwlr-layer-shell`, `mirror` uses `xdg-shell`, and `color
---clipboard` needs `zwlr_data_control_manager_v1`. `wlr-peek doctor` prints exactly what
-your compositor advertises.
+A wlroots compositor exposing `ext-image-copy-capture-v1`. Screen inspection (`color`,
+`loupe`, `region`, screen `mirror`/`watch`) needs the **output** source — **Sway ≥ 1.11 /
+wlroots ≥ 0.19**; targeting a **window** (`-w`, window mirror) additionally needs the
+**foreign-toplevel** source + `ext-foreign-toplevel-list-v1` — **Sway ≥ 1.12 / wlroots ≥
+0.20**. The frozen overlays (`color`, `loupe`, `region`) use `zwlr-layer-shell`, `mirror`
+uses `xdg-shell`, and `color --clipboard` needs `zwlr_data_control_manager_v1`. `wlr-peek
+doctor` prints exactly what your compositor advertises; see
+[COMPATIBILITY.md](../../COMPATIBILITY.md) for the full matrix.
 
 - **GL stack** — `libegl1` at runtime (the overlays render through EGL/GLES). Capture is
   CPU shm, so **no `libgbm`** is needed (the `gpu` feature is off by default).

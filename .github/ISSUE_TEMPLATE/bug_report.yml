@@ -1,0 +1,125 @@
+name: Bug report
+description: Something doesn't work as expected in one of the tools.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report! The fields below help a lot —
+        most "doesn't work" issues come down to the compositor version or how the
+        tool was installed, so please fill in as much as you can.
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which tool(s)?
+      description: Select every tool the problem affects.
+      multiple: true
+      options:
+        - wlr-chooser
+        - wlr-switcher
+        - wlr-peek
+        - wlr-shot
+        - wlr-draw
+        - wlr-utils (the bundle)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `wlr-<tool> --version` (e.g. `wlr-draw 1.4.0`). Optional if you paste `doctor` output below — it starts with this."
+      placeholder: wlr-draw 1.4.0
+    validations:
+      required: false
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      options:
+        - Debian/Ubuntu .deb (from the release page)
+        - "cargo install (crates.io)"
+        - Prebuilt bundle / installer script (from the release page)
+        - AUR
+        - Built from source
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: compositor
+    attributes:
+      label: Compositor and version
+      description: "Which Wayland compositor, and its version (e.g. `Sway 1.11`, `Hyprland 0.45`, `niri 0.1.9`). Optional if you paste `doctor` output — it reports this."
+      placeholder: Sway 1.11
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / distro
+      description: "Optional if you paste `doctor` output — it reports this."
+      placeholder: Debian 13 (trixie)
+    validations:
+      required: false
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`doctor` output"
+      description: |
+        The single most useful thing for capture/compatibility bugs — please paste it.
+        Every tool has a `doctor` command; run it on whichever one you installed:
+        `wlr-peek doctor`, `wlr-shot doctor`, `wlr-draw doctor`, or
+        `wlr-chooser --doctor` / `wlr-switcher --doctor`. It reports your tool version,
+        OS, compositor + version and which capture protocols your compositor advertises —
+        so it already covers the version / compositor / OS fields above.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s) you ran and what you did.
+      placeholder: |
+        1. Run `wlr-draw`
+        2. Press …
+        3. …
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Any error output. For `wlr-draw` (a daemon), the journal helps:
+        `journalctl --user -u wlr-draw -e`. Re-running with `RUST_LOG=debug` in the
+        environment adds detail.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm on the latest release (or noted my version above).
+          required: true

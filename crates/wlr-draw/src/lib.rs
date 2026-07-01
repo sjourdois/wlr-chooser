@@ -7,7 +7,9 @@
 
 #[cfg(feature = "tray")]
 mod autostart;
+mod i18n;
 mod ipc;
+mod keymap;
 mod model;
 mod overlay;
 mod proto;
@@ -64,18 +66,29 @@ enum Ctl {
         /// Width in logical pixels
         px: f32,
     },
+    /// Save the annotated screen to a PNG (default: ~/Pictures/wlr-draw-<stamp>.png)
+    Save {
+        /// Destination path; omit for a timestamped file in your Pictures directory
+        path: Option<String>,
+    },
     /// Stop the running daemon
     Quit,
+    /// Report which capture protocols the current compositor supports
+    Doctor,
 }
 
 pub fn main() -> anyhow::Result<()> {
     // Negotiate the UI language from the desktop locale (no-op without the `i18n`
     // feature). Like every other binary in the workspace — without it the tray menu and
     // on-screen hints stay English regardless of `$LANG`.
-    wlr_capture::i18n::init();
+    crate::i18n::init();
     let cli = Cli::parse();
     match cli.cmd {
         None => overlay::run(),
+        // Doctor probes the compositor directly — it doesn't drive the daemon.
+        Some(Ctl::Doctor) => {
+            wlr_capture::doctor::report("wlr-draw", env!("CARGO_PKG_VERSION")).map_err(Into::into)
+        }
         Some(ctl) => ipc::send(&ctl_to_cmd(ctl)?),
     }
 }
@@ -99,5 +112,8 @@ fn ctl_to_cmd(ctl: Ctl) -> anyhow::Result<Cmd> {
             parse_color(&value).ok_or_else(|| anyhow::anyhow!("unknown colour: {value}"))?,
         ),
         Ctl::Width { px } => Cmd::Width(px),
+        Ctl::Save { path } => Cmd::Save(path),
+        // Not a daemon command — handled directly in `main` before we get here.
+        Ctl::Doctor => unreachable!("Doctor is handled before ctl_to_cmd"),
     })
 }

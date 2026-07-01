@@ -39,10 +39,10 @@ path = "src/bin/wlr-draw.rs"
 # Each tool with its default features, so the bundle is the full-featured build
 # (GPU capture, OCR, video+audio recording, tray). Pull a single tool instead for a
 # lighter footprint: `cargo install wlr-shot`, etc.
-wlr-chooser = { path = "../wlr-chooser", version = "1.3.2" }
-wlr-peek = { path = "../wlr-peek", version = "1.3.2" }
-wlr-shot = { path = "../wlr-shot", version = "1.3.2" }
-wlr-draw = { path = "../wlr-draw", version = "1.3.2" }
+wlr-chooser = { path = "../wlr-chooser", version = "1.4.0" }
+wlr-peek = { path = "../wlr-peek", version = "1.4.0" }
+wlr-shot = { path = "../wlr-shot", version = "1.4.0" }
+wlr-draw = { path = "../wlr-draw", version = "1.4.0" }
 anyhow.workspace = true
 
 # A single Debian package shipping every tool, in place of one .deb per crate. EGL/GL are

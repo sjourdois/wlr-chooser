@@ -41,6 +41,7 @@ impl Cmd {
     /// Parse one protocol line. Errors carry a human-readable reason (sent back to the
     /// client as `err <reason>`).
     pub fn parse(line: &str) -> Result<Cmd, String> {
+        let line = line.trim();
         let mut it = line.split_whitespace();
         let Some(verb) = it.next() else {
             return Err("empty command".into());
@@ -55,7 +56,12 @@ impl Cmd {
             "undo" => Cmd::Undo,
             "redo" => Cmd::Redo,
             "visibility" | "hide" | "show" => Cmd::Visibility,
-            "save" | "screenshot" => Cmd::Save(arg.map(str::to_string)),
+            // The path may contain spaces, so take the whole remainder of the line
+            // rather than a single whitespace-split token.
+            "save" | "screenshot" => {
+                let rest = line[verb.len()..].trim_start();
+                Cmd::Save((!rest.is_empty()).then(|| rest.to_string()))
+            }
             "quit" | "exit" => Cmd::Quit,
             "tool" => {
                 let a = need("a tool name")?;
@@ -112,7 +118,10 @@ mod tests {
             Cmd::Color([0xff, 0x3b, 0x30, 0xff]),
             Cmd::Width(6.0),
             Cmd::Save(None),
-            Cmd::Save(Some("/tmp/a.png".into())),
+            Cmd::Save(Some("/home/me/Pictures/shot.png".into())),
+            // A path with spaces must survive the round-trip: `save` takes the rest
+            // of the line, not a single whitespace-split token.
+            Cmd::Save(Some("/home/me/My Pictures/a b.png".into())),
         ];
         for c in cases {
             assert_eq!(Cmd::parse(&c.to_line()), Ok(c.clone()), "{c:?}");

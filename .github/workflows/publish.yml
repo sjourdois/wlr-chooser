@@ -30,7 +30,7 @@ jobs:
           # (which depend on it), then the `wlr-utils` bundle (which depends on the
           # tools). A version already on crates.io is skipped. Logs go outside the repo
           # so cargo doesn't see a dirty working tree.
-          for pkg in wlr-capture wlr-chooser wlr-shot wlr-peek wlr-draw wlr-utils; do
+          for pkg in wlr-capture wlr-i18n wlr-chooser wlr-shot wlr-peek wlr-draw wlr-utils; do
             log="$RUNNER_TEMP/publish-$pkg.log"
             if cargo publish -p "$pkg" 2>"$log"; then
               echo "$pkg published"

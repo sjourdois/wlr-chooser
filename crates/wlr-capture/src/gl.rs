@@ -10,8 +10,8 @@
 //! Extension function pointers are loaded at runtime via `eglGetProcAddress`
 //! (edgefirst-egl has no typed bindings for these).
 
+use crate::error::{CaptureError, Context, Result};
 use crate::wl;
-use anyhow::{Context as _, Result, anyhow, bail};
 use edgefirst_egl as egl;
 use std::ffi::c_void;
 use std::os::fd::AsRawFd;
@@ -116,7 +116,7 @@ impl GpuReadback {
     pub fn new() -> Result<Self> {
         let conn = Connection::connect_to_env().context("Wayland connection")?;
         let lib = unsafe { egl::DynamicInstance::<egl::EGL1_4>::load_required() }
-            .map_err(|e| anyhow!("libEGL not found: {e}"))?;
+            .context("libEGL not found")?;
         let egl: Egl = lib;
 
         let display_ptr = conn.backend().display_ptr() as *mut c_void;
@@ -188,7 +188,7 @@ impl GpuReadback {
             .context("EGL dma-buf import unavailable (driver)")?;
         let (w, h) = (frame.width, frame.height);
         if w == 0 || h == 0 {
-            bail!("dimensions de readback nulles");
+            return Err(CaptureError::msg("dimensions de readback nulles"));
         }
 
         self.egl
@@ -211,7 +211,7 @@ impl GpuReadback {
             )
         };
         if image.is_null() {
-            bail!("eglCreateImageKHR failed");
+            return Err(CaptureError::msg("eglCreateImageKHR failed"));
         }
 
         // Import → bind to a texture → attach to an FBO → glReadPixels. Always
@@ -245,13 +245,13 @@ impl GpuReadback {
             let tex = self
                 .gl
                 .create_texture()
-                .map_err(|e| anyhow!("glGenTextures: {e}"))?;
+                .map_err(|e| CaptureError::msg(format!("glGenTextures: {e}")))?;
             self.gl.bind_texture(GL_TEXTURE_2D, Some(tex));
             (egl.image_target)(GL_TEXTURE_2D, image);
 
             let fbo = self.gl.create_framebuffer().map_err(|e| {
                 self.gl.delete_texture(tex);
-                anyhow!("glGenFramebuffers: {e}")
+                CaptureError::msg(format!("glGenFramebuffers: {e}"))
             })?;
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
             self.gl.framebuffer_texture_2d(
@@ -276,7 +276,9 @@ impl GpuReadback {
                 );
                 Ok(buf)
             } else {
-                Err(anyhow!("FBO de readback incomplet (0x{status:x})"))
+                Err(CaptureError::msg(format!(
+                    "FBO de readback incomplet (0x{status:x})"
+                )))
             };
 
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);

@@ -1,0 +1,25 @@
+[package]
+name = "wlr-i18n"
+description = "Shared i18n infrastructure for the wlr-utils tools: each tool crate owns its own Fluent catalog and loader; this crate provides the reusable plumbing."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+
+[lib]
+name = "wlr_i18n"
+path = "src/lib.rs"
+
+[features]
+default = ["i18n"]
+# Localisation via Fluent (`i18n-embed`). Off (`--no-default-features`) builds English-only
+# from each crate's build-time fallback table, with no Fluent dependency.
+i18n = ["dep:i18n-embed", "dep:rust-embed", "dep:unic-langid"]
+
+[dependencies]
+i18n-embed = { workspace = true, optional = true }
+rust-embed = { workspace = true, optional = true }
+unic-langid = { workspace = true, optional = true }
