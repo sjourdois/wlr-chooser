@@ -19,9 +19,11 @@ Five sharp tools for **wlroots** compositors, all sharing one capture engine.
 | **[wlr-shot](crates/wlr-shot)** | **Screen capture** — screenshots of an output/region/window (PNG/JPEG/PPM), copy to clipboard; plus **recording** (H.264, or animated GIF/WebP) with **system audio** & **timelapse** (NVENC/VAAPI/libx264). | [![v](https://img.shields.io/crates/v/wlr-shot.svg)](https://crates.io/crates/wlr-shot) |
 | **[wlr-draw](crates/wlr-draw)** | **Draw on screen** — a transparent annotation overlay (gromit-mpx-style): freehand, shapes, arrows, text, dwell-to-snap, element move, plus presenter **spotlight**, **freeze-frame** and **save**. Daemon + control socket. | [![v](https://img.shields.io/crates/v/wlr-draw.svg)](https://crates.io/crates/wlr-draw) |
 
-They all share **[wlr-capture](crates/wlr-capture)**, a library with the wlroots
-capture engine (`ext-image-copy-capture-v1`, full-resolution dma-buf zero-copy
-with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
+They all share two library crates: **[wlr-capture](crates/wlr-capture)**, the wlroots
+capture engine (`ext-image-copy-capture-v1`, full-resolution dma-buf zero-copy with a
+CPU shm fallback) plus an egui/EGL rendering + dma-buf-import toolkit; and
+**[wlr-i18n](crates/wlr-i18n)**, the shared Fluent localisation plumbing each tool builds
+its own message catalog on.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/sjourdois/wlr-utils/main/docs/assets/wlr-draw/annotate.gif" width="49%" alt="wlr-draw — annotate live on screen">
@@ -35,18 +37,25 @@ with a CPU shm fallback) and an egui/EGL rendering + dma-buf-import toolkit.
 
 ## Requirements
 
-- A wlroots compositor exposing `ext-image-copy-capture-v1` (and `wlr-layer-shell` for
-  the overlays). **Screen capture** needs the output source — **wlroots ≥ 0.19 /
-  Sway ≥ 1.11**; **window capture** (the switcher, `-w`, window mirror/record) additionally
-  needs the foreign-toplevel source + `ext-foreign-toplevel-list-v1` — **wlroots ≥ 0.20 /
-  Sway ≥ 1.12**. Tools degrade gracefully: where windows aren't capturable they keep their
-  screen features and say so. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix
-  (Hyprland, niri, labwc, …), or run `wlr-peek doctor` to check your own compositor.
-- **GL stack** — every tool renders overlays through EGL/GLES, so `libegl1` is needed at
-  runtime. `wlr-chooser` also builds the zero-copy **GPU path** by default, which adds
-  `libgbm` (Mesa); `wlr-shot` and `wlr-peek` capture via CPU shm and need no `libgbm`.
-- `wlr-chooser` also needs `xdg-desktop-portal-wlr` ≥ 0.8 (portal use);
-  `wlr-switcher` needs `zwlr-foreign-toplevel-management-v1` to focus windows.
+A wlroots compositor. What you get depends on which capture protocols it exposes:
+
+| Capability | Compositor floor | Wayland protocol |
+| --- | --- | --- |
+| **Screen** capture (screenshots, recording, loupe, annotation) | wlroots ≥ 0.19 · Sway ≥ 1.11 | `ext-image-copy-capture-v1` + `wlr-layer-shell` |
+| **Window** capture (switcher, `-w`, window mirror/record) | wlroots ≥ 0.20 · Sway ≥ 1.12 | adds `ext-foreign-toplevel-list-v1` |
+
+Tools degrade gracefully: where windows aren't capturable they keep their screen features
+and say so. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix (Hyprland, niri,
+labwc, …), or run `wlr-peek doctor` to check your own compositor.
+
+Runtime libraries:
+
+| Library | Needed by | Why |
+| --- | --- | --- |
+| `libegl1` | every tool | EGL/GLES overlay rendering |
+| `libgbm` (Mesa) | `wlr-chooser` | zero-copy GPU capture path (`wlr-shot`/`wlr-peek` use CPU shm, so they don't need it) |
+| `xdg-desktop-portal-wlr` ≥ 0.8 | `wlr-chooser` | portal-based picking |
+| `zwlr-foreign-toplevel-management-v1` | `wlr-switcher` | focusing windows |
 
 ## Install
 
@@ -135,6 +144,7 @@ rm -f ~/.config/systemd/user/wlr-draw.service
 - **[wlr-draw README](crates/wlr-draw/README.md)** — the annotation overlay: daemon,
   control socket, tools and example key bindings.
 - **[wlr-capture README](crates/wlr-capture/README.md)** — the shared engine.
+- **[wlr-i18n README](crates/wlr-i18n/README.md)** — the shared localisation plumbing.
 
 ## Contributing
 

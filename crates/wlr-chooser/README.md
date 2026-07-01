@@ -224,7 +224,7 @@ LANGUAGE=ja wlr-chooser
 
 Rendering CJK text needs a CJK font installed (e.g. Noto Sans CJK); one is
 auto-detected. New locales are welcome — copy
-`crates/wlr-capture/i18n/en/wlr_capture.ftl`.
+`crates/wlr-chooser/i18n/en/wlr_chooser.ftl`.
 
 ## Contributing
 
