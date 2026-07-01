@@ -88,4 +88,4 @@ Apache-2.0 and MIT, the same terms as the project.
 
 Cutting a release (the whole workspace versions as one block) follows a checklist
 that catches the docs and CI files which drift after a structural change — see
-[`docs/RELEASING.md`](docs/RELEASING.md).
+[`RELEASING.md`](RELEASING.md).
