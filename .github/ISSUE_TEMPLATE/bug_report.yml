@@ -30,10 +30,10 @@ body:
     id: version
     attributes:
       label: Version
-      description: "Output of `wlr-<tool> --version` (e.g. `wlr-draw 1.4.0`)."
+      description: "Output of `wlr-<tool> --version` (e.g. `wlr-draw 1.4.0`). Optional if you paste `doctor` output below — it starts with this."
       placeholder: wlr-draw 1.4.0
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: install-method
@@ -53,29 +53,31 @@ body:
     id: compositor
     attributes:
       label: Compositor and version
-      description: "Which Wayland compositor, and its version (e.g. `Sway 1.11`, `Hyprland 0.45`, `niri 0.1.9`)."
+      description: "Which Wayland compositor, and its version (e.g. `Sway 1.11`, `Hyprland 0.45`, `niri 0.1.9`). Optional if you paste `doctor` output — it reports this."
       placeholder: Sway 1.11
     validations:
-      required: true
+      required: false
 
   - type: input
     id: os
     attributes:
       label: OS / distro
+      description: "Optional if you paste `doctor` output — it reports this."
       placeholder: Debian 13 (trixie)
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: doctor
     attributes:
       label: "`doctor` output"
       description: |
-        Every tool has a `doctor` command — run it on whichever one you installed
-        (`wlr-peek doctor`, `wlr-shot doctor`, `wlr-draw doctor`, or
-        `wlr-chooser --doctor`) and paste the full output. It reports what your
-        compositor supports and is the single most useful thing for
-        capture/compatibility bugs.
+        The single most useful thing for capture/compatibility bugs — please paste it.
+        Every tool has a `doctor` command; run it on whichever one you installed:
+        `wlr-peek doctor`, `wlr-shot doctor`, `wlr-draw doctor`, or
+        `wlr-chooser --doctor` / `wlr-switcher --doctor`. It reports your tool version,
+        OS, compositor + version and which capture protocols your compositor advertises —
+        so it already covers the version / compositor / OS fields above.
       render: text
     validations:
       required: false
