@@ -4,6 +4,7 @@
 //! [`shell`] layer-shell host; the binaries differ only in their CLI and in what
 //! they do with the picked source (print a token vs. focus the window).
 
+mod i18n;
 pub mod chooser_cli;
 pub mod shell;
 pub mod switcher_cli;

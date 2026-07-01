@@ -16,7 +16,7 @@
 
 use crate::sink::FrameSink;
 use crate::wl::CapturedImage;
-use anyhow::{Context, Result, anyhow, bail};
+use crate::error::{CaptureError, Context, Result};
 use ffmpeg::format::Pixel;
 use ffmpeg_next as ffmpeg;
 use std::path::{Path, PathBuf};
@@ -178,13 +178,13 @@ impl VaapiCtx {
             if r < 0 {
                 let name =
                     device.map_or_else(|| "(default)".to_string(), |p| p.display().to_string());
-                bail!("opening VAAPI device {name} (code {r})");
+                return Err(CaptureError::msg(format!("opening VAAPI device {name} (code {r})")));
             }
 
             let frames = ffi::av_hwframe_ctx_alloc(dev);
             if frames.is_null() {
                 ffi::av_buffer_unref(&mut dev);
-                bail!("allocating the VAAPI frame pool");
+                return Err(CaptureError::msg("allocating the VAAPI frame pool"));
             }
             let fctx = (*frames).data as *mut ffi::AVHWFramesContext;
             (*fctx).format = ffi::AVPixelFormat::AV_PIX_FMT_VAAPI;
@@ -198,7 +198,7 @@ impl VaapiCtx {
                 let mut frames = frames;
                 ffi::av_buffer_unref(&mut frames);
                 ffi::av_buffer_unref(&mut dev);
-                bail!("initialising the VAAPI frame pool (code {r})");
+                return Err(CaptureError::msg(format!("initialising the VAAPI frame pool (code {r})")));
             }
             Ok(Self {
                 device: dev,
@@ -255,12 +255,12 @@ fn resolve_backend(backend: Backend) -> Result<Backend> {
         Backend::Auto => [Backend::Nvenc, Backend::Vaapi, Backend::Software]
             .into_iter()
             .find(|&b| available(b))
-            .ok_or_else(|| anyhow!("no H.264 encoder available (need NVENC, VAAPI or libx264)")),
+            .ok_or(CaptureError::NoVideoEncoder),
         b if available(b) => Ok(b),
-        b => bail!(
+        b => Err(CaptureError::msg(format!(
             "encoder '{}' is not available in this FFmpeg build",
             b.codec_name()
-        ),
+        ))),
     }
 }
 
@@ -270,13 +270,14 @@ fn build_audio_stream(
     global_header: bool,
 ) -> Result<AudioPipe> {
     let codec = ffmpeg::encoder::find(ffmpeg::codec::Id::AAC)
-        .ok_or_else(|| anyhow!("no AAC encoder in this FFmpeg build"))?;
+        .ok_or_else(|| CaptureError::msg("no AAC encoder in this FFmpeg build"))?;
     let mut astream = octx.add_stream(codec).context("adding audio stream")?;
     let stream_index = astream.index();
 
     let mut aenc = ffmpeg::codec::context::Context::new_with_codec(codec)
         .encoder()
-        .audio()?;
+        .audio()
+        .context("opening the audio encoder")?;
     aenc.set_rate(AUDIO_RATE as i32);
     aenc.set_channel_layout(ffmpeg::channel_layout::ChannelLayout::STEREO);
     aenc.set_format(ffmpeg::format::Sample::F32(
@@ -308,12 +309,12 @@ impl Pipeline {
     fn new(path: &Path, opts: &Options, sw: u32, sh: u32) -> Result<Self> {
         let backend = resolve_backend(opts.backend)?;
         let codec = ffmpeg::encoder::find_by_name(backend.codec_name())
-            .ok_or_else(|| anyhow!("encoder '{}' unavailable", backend.codec_name()))?;
+            .ok_or_else(|| CaptureError::msg(format!("encoder '{}' unavailable", backend.codec_name())))?;
 
         // Even dimensions (H.264 chroma is subsampled 2×2).
         let dst = (sw & !1, sh & !1);
         if dst.0 == 0 || dst.1 == 0 {
-            bail!("source too small to encode ({sw}x{sh})");
+            return Err(CaptureError::SourceTooSmall { w: sw, h: sh });
         }
         // The encoder's input format, and the scaler's output. NVENC takes NV12 and
         // libx264 takes planar YUV420P, both CPU frames sent directly. VAAPI consumes
@@ -335,7 +336,8 @@ impl Pipeline {
         let mut ost = octx.add_stream(codec).context("adding video stream")?;
         let mut enc = ffmpeg::codec::context::Context::new_with_codec(codec)
             .encoder()
-            .video()?;
+            .video()
+            .context("opening the video encoder")?;
         enc.set_width(dst.0);
         enc.set_height(dst.1);
         enc.set_format(enc_format);
@@ -457,11 +459,11 @@ impl Pipeline {
             unsafe {
                 let r = ffmpeg::ffi::av_hwframe_get_buffer(vaapi.frames, hw.as_mut_ptr(), 0);
                 if r < 0 {
-                    bail!("allocating a VAAPI surface (code {r})");
+                    return Err(CaptureError::msg(format!("allocating a VAAPI surface (code {r})")));
                 }
                 let r = ffmpeg::ffi::av_hwframe_transfer_data(hw.as_mut_ptr(), dst.as_ptr(), 0);
                 if r < 0 {
-                    bail!("uploading the frame to the GPU (code {r})");
+                    return Err(CaptureError::msg(format!("uploading the frame to the GPU (code {r})")));
                 }
             }
             hw.set_pts(Some(pts));

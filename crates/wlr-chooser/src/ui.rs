@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wlr_capture::render::DmabufImporter;
 use wlr_capture::theme::Theme;
-use wlr_capture::{icons, tr, wl};
+use crate::tr;
+use wlr_capture::{icons, wl};
 
 /// Shared slot where the chosen source lands; read by `main` after the window closes.
 pub type Outcome = Arc<Mutex<Option<Selection>>>;

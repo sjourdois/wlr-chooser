@@ -19,7 +19,7 @@ path = "src/main.rs"
 default = ["i18n", "tray"]
 # Localised UI (the on-screen HUD hints) via Fluent. On by default; `--no-default-features`
 # builds English-only with no Fluent dependency.
-i18n = ["wlr-capture/i18n"]
+i18n = ["wlr-i18n/i18n", "dep:rust-embed"]
 # StatusNotifierItem tray icon (status + a click-to-toggle menu) via `ksni`. On by
 # default; links system `libdbus`. `--no-default-features` drops it (no D-Bus).
 tray = ["dep:ksni"]
@@ -29,9 +29,19 @@ tray = ["dep:ksni"]
 # plus the one-shot output capture (`compose`) used for the freeze-frame backdrop. The
 # overlay is otherwise a transparent vector layer (no live stream).
 wlr-capture = { path = "../wlr-capture", version = "1.3.2", default-features = false, features = ["toolkit", "compose"] }
+# This crate owns its own localised catalog (`i18n/`); wlr-i18n is the shared loader plumbing.
+wlr-i18n = { path = "../wlr-i18n", version = "1.3.2", default-features = false }
+# For the `#[derive(RustEmbed)]` over this crate's `i18n/` folder (the `i18n` feature).
+rust-embed = { workspace = true, optional = true }
 anyhow.workspace = true
 clap.workspace = true
 egui.workspace = true
+# Configurable keybindings (`~/.config/wlr-draw/keys.toml`): TOML + serde for the file,
+# xkbcommon for XKB keysym <-> name parsing (the names sway/Hyprland `bindsym` use).
+# xkbcommon is already linked transitively via smithay-client-toolkit (no new system dep).
+toml.workspace = true
+serde.workspace = true
+xkbcommon.workspace = true
 # Layer-shell windowing + the calloop event loop (reused via sctk's reexports), so the
 # control socket and Wayland events drive one loop together.
 smithay-client-toolkit.workspace = true
@@ -43,6 +53,10 @@ ksni = { version = "0.3", optional = true, default-features = false, features = 
     "blocking",
     "async-io",
 ] }
+
+# Generates the English fallback table for the `--no-default-features` (no-Fluent) build.
+[build-dependencies]
+wlr-i18n = { path = "../wlr-i18n", version = "1.3.2", default-features = false }
 
 [package.metadata.deb]
 maintainer = "Stéphane Jourdois <stephane@jourdois.fr>"

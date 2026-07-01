@@ -11,7 +11,8 @@ use crate::ui::{Live, Mode, Options, View};
 use crate::{acquire_switch_lock, run_overlay};
 use clap::{Parser, ValueEnum};
 use std::time::Instant;
-use wlr_capture::{i18n, tr, wl};
+use crate::{i18n, tr};
+use wlr_capture::wl;
 
 /// Presentation of the switcher (CLI mirror of [`View`]).
 #[derive(Clone, Copy, PartialEq, Eq, Default, ValueEnum)]

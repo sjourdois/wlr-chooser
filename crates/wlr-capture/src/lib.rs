@@ -24,10 +24,9 @@
 //! - [`focus`]: "the active window" / "the current output" via the compositor's own
 //!   IPC (Sway today). Wayland gives no portable way to query focus.
 //!
-//! Always available — UI text via the [`tr!`] macro:
-//! - [`i18n`]: localisation. With the `i18n` feature (default) it uses Fluent; without
-//!   it, `tr!` returns the English text generated from the `en` catalog at build time,
-//!   pulling no Fluent dependency. So every module (core or toolkit) can call `tr!`.
+//! This crate carries **no localised UI strings**: it exposes an API and typed
+//! [`CaptureError`]s, and any on-screen text (e.g. the overlay hints, the mirror labels)
+//! is passed in by the caller. Each tool crate owns its own catalog via `wlr-i18n`.
 //!
 //! Behind the `toolkit` feature (on by default) — the egui/EGL overlay toolkit:
 //! - [`render`]: egui → `egui_glow` rendering on an EGL context bound to a surface.
@@ -50,8 +49,9 @@ pub use wayland_client::Connection;
 
 pub mod clipboard;
 pub mod diff;
+pub mod error;
 pub mod gl;
-pub mod i18n;
+pub use error::CaptureError;
 pub mod sink;
 pub mod stream;
 pub mod wl;

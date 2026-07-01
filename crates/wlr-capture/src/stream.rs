@@ -14,7 +14,7 @@
 
 use crate::gl::GpuReadback;
 use crate::wl::{CapturedImage, Client, Frame, SessionId};
-use anyhow::Result;
+use crate::error::Result;
 use std::time::{Duration, Instant};
 
 /// Default time to wait for the source to appear before giving up.

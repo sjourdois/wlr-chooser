@@ -3,6 +3,7 @@ members = [
     "crates/wlr-capture",
     "crates/wlr-chooser",
     "crates/wlr-draw",
+    "crates/wlr-i18n",
     "crates/wlr-peek",
     "crates/wlr-shot",
     "crates/wlr-utils",
@@ -15,6 +16,7 @@ default-members = [
     "crates/wlr-capture",
     "crates/wlr-chooser",
     "crates/wlr-draw",
+    "crates/wlr-i18n",
     "crates/wlr-peek",
     "crates/wlr-shot",
 ]
@@ -61,8 +63,14 @@ gbm = { version = "0.18.0", default-features = false }
 ffmpeg-next = "8.1"
 # SIGINT handler so `wlr-shot record` finalises the file cleanly on Ctrl-C.
 ctrlc = "3.5"
+# Typed library errors (wlr-capture's public API surface).
+thiserror = "2"
 # Test-only: private (0600), auto-removed temp files for the encoder round-trip.
 tempfile = "3"
+# Keysym name <-> value for wlr-draw's configurable keybindings (parse XKB names like
+# sway/Hyprland `bindsym`). Already linked transitively via smithay-client-toolkit, so
+# no new system dependency (libxkbcommon is required either way).
+xkbcommon = "0.8"
 
 [profile.release]
 opt-level = 2

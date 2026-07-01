@@ -1,0 +1,34 @@
+# Example wlr-draw keybindings — copy to ~/.config/wlr-draw/keys.toml and edit.
+#
+# Key names are XKB keysym names (the same ones sway/Hyprland use in `bindsym`):
+# `a`, `space`, `Caps_Lock`, `plus`, `F5`, … matched case-insensitively. Each binding is
+# a single name or a list of aliases. Anything you omit keeps its default, so you can
+# delete every line you don't want to change. With no file at all, these are the defaults.
+
+# --- Tools ---
+pen = "p"
+rect = "r"
+mask = "m"
+arrow = "a"
+text = "t"
+move = "s"
+eraser = "e"
+
+# --- Actions ---
+palette = "c"
+undo = "u"
+redo = "y"
+visibility = "v"
+save = "w"
+help = "h"
+clear = "Delete"
+width-inc = ["plus", "equal"]
+width-dec = "minus"
+freeze = "space"
+
+# --- Held controls: a modifier (caps/ctrl/shift/alt/super) OR a regular key ---
+# On a keyboard without a usable Caps Lock (e.g. HHKB), point `passthrough` elsewhere:
+#   passthrough = "alt"      # or "super", or any key
+passthrough = "caps"
+constrain = "ctrl"
+spotlight = "shift"

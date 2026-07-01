@@ -3025,7 +3025,6 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "wlr-capture"
 version = "1.3.2"
 dependencies = [
- "anyhow",
  "edgefirst-egl",
  "egui",
  "egui_glow",
@@ -3033,19 +3032,17 @@ dependencies = [
  "fontdb",
  "gbm",
  "glow",
- "i18n-embed",
  "image",
  "libloading 0.9.0",
  "pipewire",
  "resvg",
- "rust-embed",
  "rustix 1.1.4",
  "serde",
  "serde_json",
  "smithay-client-toolkit",
  "tempfile",
+ "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
- "unic-langid",
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
@@ -3060,11 +3057,13 @@ dependencies = [
  "clap",
  "egui",
  "image",
+ "rust-embed",
  "rustix 1.1.4",
  "smithay-client-toolkit",
  "wayland-client",
  "wayland-protocols",
  "wlr-capture",
+ "wlr-i18n",
 ]
 
 [[package]]
@@ -3075,9 +3074,23 @@ dependencies = [
  "clap",
  "egui",
  "ksni",
+ "rust-embed",
+ "serde",
  "smithay-client-toolkit",
+ "toml 1.1.2+spec-1.1.0",
  "wayland-client",
  "wlr-capture",
+ "wlr-i18n",
+ "xkbcommon",
+]
+
+[[package]]
+name = "wlr-i18n"
+version = "1.3.2"
+dependencies = [
+ "i18n-embed",
+ "rust-embed",
+ "unic-langid",
 ]
 
 [[package]]
@@ -3088,8 +3101,10 @@ dependencies = [
  "clap",
  "image",
  "leptess",
+ "rust-embed",
  "rustix 1.1.4",
  "wlr-capture",
+ "wlr-i18n",
 ]
 
 [[package]]
@@ -3100,8 +3115,10 @@ dependencies = [
  "clap",
  "ctrlc",
  "image",
+ "rust-embed",
  "webp",
  "wlr-capture",
+ "wlr-i18n",
 ]
 
 [[package]]

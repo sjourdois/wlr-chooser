@@ -8,7 +8,7 @@
 //! that only streams frames through [`sink`](crate::sink) doesn't pull it in.
 
 use crate::wl::{CapturedImage, Client, Frame, Output, Region};
-use anyhow::{Context, Result, bail};
+use crate::error::{CaptureError, Context, Result};
 use std::time::Duration;
 
 /// Default time to wait for a one-shot frame from a source.
@@ -18,12 +18,10 @@ pub const DEFAULT_BUDGET: Duration = Duration::from_secs(2);
 /// dma-buf frames (only produced by the `gpu` build) are read back via an offscreen
 /// GL context. The readback context is built per call — fine for a one-shot tool;
 /// a streaming consumer would reuse one (see [`sink::pump`](crate::sink::pump)).
-pub fn frame_to_image(frame: Frame) -> Result<CapturedImage> {
+pub fn frame_to_image(frame: Frame) -> Result<CapturedImage, CaptureError> {
     match frame {
         Frame::Shm(img) => Ok(img),
-        Frame::Dmabuf(d) => crate::gl::GpuReadback::new()
-            .and_then(|mut rb| rb.readback(d))
-            .context("readback GPU de la frame dma-buf"),
+        Frame::Dmabuf(d) => crate::gl::GpuReadback::new().and_then(|mut rb| rb.readback(d)),
     }
 }
 
@@ -32,22 +30,22 @@ pub fn capture_output(
     client: &mut Client,
     name: Option<&str>,
     budget: Duration,
-) -> Result<CapturedImage> {
+) -> Result<CapturedImage, CaptureError> {
     let outputs = client.outputs().to_vec();
     let output = match name {
         Some(n) => outputs
             .iter()
             .find(|o| o.name == n)
-            .with_context(|| format!("output '{n}' not found"))?,
+            .ok_or_else(|| CaptureError::OutputNotFound(n.to_string()))?,
         None => match outputs.as_slice() {
             [single] => single,
-            [] => bail!("no outputs available"),
+            [] => return Err(CaptureError::NoOutputs),
             many => {
                 let names: Vec<&str> = many.iter().map(|o| o.name.as_str()).collect();
-                bail!(
+                return Err(CaptureError::msg(format!(
                     "multiple outputs; specify -o NAME among: {}",
                     names.join(", ")
-                );
+                )));
             }
         },
     };
@@ -55,13 +53,17 @@ pub fn capture_output(
 }
 
 /// Capture a window by its foreign-toplevel identifier.
-pub fn capture_window(client: &mut Client, id: &str, budget: Duration) -> Result<CapturedImage> {
+pub fn capture_window(
+    client: &mut Client,
+    id: &str,
+    budget: Duration,
+) -> Result<CapturedImage, CaptureError> {
     let tl = client
         .toplevels()
         .iter()
         .find(|t| t.identifier == id)
         .cloned()
-        .with_context(|| format!("window '{id}' not found"))?;
+        .ok_or_else(|| CaptureError::WindowNotFound(id.to_string()))?;
     frame_to_image(client.capture_toplevel_once(&tl, budget)?)
 }
 
@@ -75,10 +77,13 @@ pub struct OutputCapture {
 
 /// Capture every output once — used as the interactive overlay's frozen backdrop,
 /// and then to composite the chosen region from the very same pixels.
-pub fn capture_all(client: &mut Client, budget: Duration) -> Result<Vec<OutputCapture>> {
+pub fn capture_all(
+    client: &mut Client,
+    budget: Duration,
+) -> Result<Vec<OutputCapture>, CaptureError> {
     let outputs = client.outputs().to_vec();
     if outputs.is_empty() {
-        bail!("no outputs available");
+        return Err(CaptureError::NoOutputs);
     }
     let mut caps = Vec::with_capacity(outputs.len());
     for output in outputs {
@@ -91,9 +96,9 @@ pub fn capture_all(client: &mut Client, budget: Duration) -> Result<Vec<OutputCa
 /// Composite `region` from already-captured outputs. A region within a single
 /// output is returned at that output's native pixel resolution; a region spanning
 /// several (possibly mixed-scale) outputs is composited at logical resolution.
-pub fn composite(caps: &[OutputCapture], region: Region) -> Result<CapturedImage> {
+pub fn composite(caps: &[OutputCapture], region: Region) -> Result<CapturedImage, CaptureError> {
     if region.is_empty() {
-        bail!("empty region");
+        return Err(CaptureError::EmptyRegion);
     }
     let covering: Vec<&OutputCapture> = caps
         .iter()
@@ -101,7 +106,7 @@ pub fn composite(caps: &[OutputCapture], region: Region) -> Result<CapturedImage
         .collect();
 
     match covering.as_slice() {
-        [] => bail!("region covers no output"),
+        [] => Err(CaptureError::RegionOffscreen),
         // Fast path: a single output → crop its native capture, no resampling.
         [c] => {
             let inter = region.intersect(&c.output.logical_rect()).unwrap();
@@ -132,9 +137,9 @@ pub fn capture_region(
     client: &mut Client,
     region: Region,
     budget: Duration,
-) -> Result<CapturedImage> {
+) -> Result<CapturedImage, CaptureError> {
     if region.is_empty() {
-        bail!("empty region");
+        return Err(CaptureError::EmptyRegion);
     }
     let outputs: Vec<Output> = client
         .outputs()
@@ -143,7 +148,7 @@ pub fn capture_region(
         .cloned()
         .collect();
     if outputs.is_empty() {
-        bail!("region covers no output");
+        return Err(CaptureError::RegionOffscreen);
     }
     let mut caps = Vec::with_capacity(outputs.len());
     for output in outputs {
@@ -154,9 +159,9 @@ pub fn capture_region(
 }
 
 /// The bounding box of every output, in logical coordinates (the whole desktop).
-pub fn whole_layout(client: &Client) -> Result<Region> {
+pub fn whole_layout(client: &Client) -> Result<Region, CaptureError> {
     let mut it = client.outputs().iter().map(Output::logical_rect);
-    let first = it.next().context("no outputs available")?;
+    let first = it.next().ok_or(CaptureError::NoOutputs)?;
     let (mut x0, mut y0) = (first.x, first.y);
     let (mut x1, mut y1) = (first.x + first.w as i32, first.y + first.h as i32);
     for r in it {
@@ -210,9 +215,9 @@ pub fn resize(img: CapturedImage, nw: u32, nh: u32) -> CapturedImage {
 
 /// Encode a captured image as PNG bytes (for tools that save a still without pulling in
 /// `image` themselves).
-pub fn encode_png(img: &CapturedImage) -> Result<Vec<u8>> {
+pub fn encode_png(img: &CapturedImage) -> Result<Vec<u8>, CaptureError> {
     let buf = image::RgbaImage::from_raw(img.width, img.height, img.rgba.clone())
-        .ok_or_else(|| anyhow::anyhow!("image dimensions don't match the buffer"))?;
+        .ok_or_else(|| CaptureError::msg("image dimensions don't match the buffer"))?;
     let mut out = std::io::Cursor::new(Vec::new());
     image::DynamicImage::ImageRgba8(buf)
         .write_to(&mut out, image::ImageFormat::Png)
@@ -221,8 +226,8 @@ pub fn encode_png(img: &CapturedImage) -> Result<Vec<u8>> {
 }
 
 /// Parse a slurp-style geometry: `"X,Y WxH"` (X/Y may be negative).
-pub fn parse_geometry(s: &str) -> Result<Region> {
-    let err = || anyhow::anyhow!("invalid geometry '{s}' (expected 'X,Y WxH')");
+pub fn parse_geometry(s: &str) -> Result<Region, CaptureError> {
+    let err = || CaptureError::InvalidGeometry(s.to_string());
     let (pos, size) = s.trim().split_once(' ').ok_or_else(err)?;
     let (x, y) = pos.split_once(',').ok_or_else(err)?;
     let (w, h) = size.split_once(['x', 'X', '×']).ok_or_else(err)?;

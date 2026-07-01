@@ -13,7 +13,7 @@
 //! requires a focused surface and an input serial, so it is deliberately omitted —
 //! every wlroots compositor we target exposes `data-control`.
 
-use anyhow::{Context, Result};
+use crate::error::{Context, Result};
 use std::fs::File;
 use std::io::Write;
 use wayland_client::{

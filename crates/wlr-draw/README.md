@@ -83,6 +83,30 @@ chip shows the active tool, a **sample of the current stroke width** and its siz
 the colour — and it **pulses** a few times when you enter draw mode on an empty screen
 (or jab repeatedly at one spot) to remind you you're drawing.
 
+### Customising shortcuts
+
+Every shortcut above is rebindable from **`~/.config/wlr-draw/keys.toml`** (honours
+`$XDG_CONFIG_HOME`). Key names are the same **XKB keysym names** sway/Hyprland use in
+`bindsym` (`a`, `space`, `Caps_Lock`, `plus`, `F5`…), matched case-insensitively. Each
+binding is a single name or a list; missing entries keep their default, so a partial file
+is fine and no config at all means the defaults below.
+
+The three held controls — `passthrough` (click-through), `constrain`, `spotlight` — take
+**either a modifier** (`caps`, `ctrl`, `shift`, `alt`, `super`) **or a regular key**. This
+is the fix for keyboards without a usable Caps Lock (e.g. HHKB): point `passthrough` at
+`alt`, `super`, or any key. A modifier engages while held (Caps Lock latches); a regular
+key bound to `passthrough` toggles, and to `constrain`/`spotlight` engages while held.
+
+A commented example listing every binding with its default is at
+[`docs/wlr-draw-keys.toml`](../../docs/wlr-draw-keys.toml) — copy it to
+`~/.config/wlr-draw/keys.toml` and edit.
+
+Fixed (not rebindable): `Esc` (always backs out), the arrow-key nudge, and the spotlight
+size/dim cluster (`i`/`j`/`k`/`l` + wheel, live only while spotlighting). The nudge step
+size still reads the physical `Shift` (1px) / `Ctrl` (big) keys. A bad name or a key bound
+to two things is reported on stderr and the default is kept. The on-screen `h` legend and
+the tray's Shortcuts menu reflect your bindings.
+
 ## Drawing
 
 - **Pen** — freehand. **Eraser** — deletes whole strokes/shapes the cursor passes over.

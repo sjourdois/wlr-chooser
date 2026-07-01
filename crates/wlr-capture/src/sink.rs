@@ -10,7 +10,7 @@
 
 use crate::gl::GpuReadback;
 use crate::wl::{CapturedImage, DmabufFrame, Frame};
-use anyhow::Result;
+use crate::error::Result;
 use std::time::Duration;
 
 /// A consumer of a capture stream. `ts` is each frame's capture time relative to a

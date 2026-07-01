@@ -13,6 +13,8 @@ use std::io::{Cursor, Write};
 use wlr_capture::capture::{self, DEFAULT_BUDGET};
 use wlr_capture::{focus, overlay, wl};
 
+mod i18n;
+
 #[derive(Parser)]
 #[command(
     name = "wlr-shot",
@@ -102,7 +104,7 @@ enum Fmt {
 }
 
 pub fn main() {
-    wlr_capture::i18n::init();
+    crate::i18n::init();
     let cli = Cli::parse();
     let res = match cli.cmd {
         Cmd::Screenshot(args) => screenshot(args),
@@ -139,7 +141,7 @@ fn screenshot(args: ShotArgs) -> Result<()> {
         // Freeze every output, let the user drag a region, then crop from the same
         // frozen pixels (so the shot matches exactly what was on screen).
         let caps = capture::capture_all(&mut client, DEFAULT_BUDGET)?;
-        match overlay::select_region_on(&conn, &caps)? {
+        match overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
             Some(region) => capture::composite(&caps, region)?,
             None => std::process::exit(1), // cancelled
         }
@@ -185,9 +187,9 @@ fn mime_for(fmt: Fmt) -> &'static str {
 /// outlive this process.
 fn clipboard_copy(mime: &str, bytes: Vec<u8>, foreground: bool) -> Result<()> {
     if foreground {
-        return wlr_capture::clipboard::serve(mime, bytes);
+        return wlr_capture::clipboard::serve(mime, bytes).map_err(Into::into);
     }
-    wlr_capture::clipboard::spawn_detached(&bytes, &["clipboard-serve", "--mime", mime])
+    wlr_capture::clipboard::spawn_detached(&bytes, &["clipboard-serve", "--mime", mime]).map_err(Into::into)
 }
 
 /// The `clipboard-serve` daemon body: read the blob from stdin, then serve it.
@@ -197,7 +199,7 @@ fn clipboard_serve(mime: &str) -> Result<()> {
     std::io::stdin()
         .read_to_end(&mut data)
         .context("reading clipboard data")?;
-    wlr_capture::clipboard::serve(mime, data)
+    wlr_capture::clipboard::serve(mime, data).map_err(Into::into)
 }
 
 /// The active window's logical rectangle, via compositor focus IPC.
@@ -287,6 +289,7 @@ mod record_impl {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
+    use wlr_capture::CaptureError;
     use wlr_capture::capture;
     use wlr_capture::gl::GpuReadback;
     use wlr_capture::sink::FrameSink;
@@ -305,9 +308,9 @@ mod record_impl {
     const WEBP_MAX_DIM: u32 = 1280;
 
     /// A frame as an `RgbaImage`, downscaled so its long side is at most `max_dim`.
-    fn downscaled(img: &CapturedImage, max_dim: u32) -> Result<image::RgbaImage> {
+    fn downscaled(img: &CapturedImage, max_dim: u32) -> Result<image::RgbaImage, CaptureError> {
         let buf = image::RgbaImage::from_raw(img.width, img.height, img.rgba.clone())
-            .ok_or_else(|| anyhow::anyhow!("image dimensions don't match the buffer"))?;
+            .ok_or_else(|| CaptureError::msg("image dimensions don't match the buffer"))?;
         let long = img.width.max(img.height);
         if long <= max_dim {
             return Ok(buf);
@@ -347,11 +350,11 @@ mod record_impl {
     }
 
     impl FrameSink for GifSink {
-        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<()> {
+        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<(), CaptureError> {
             let buf = downscaled(img, GIF_MAX_DIM)?;
             self.enc
                 .encode_frame(image::Frame::from_parts(buf, 0, 0, self.delay))
-                .context("encoding a GIF frame")?;
+                .map_err(|e| CaptureError::msg(format!("encoding a GIF frame: {e}")))?;
             Ok(())
         }
         // The GIF trailer is written when the encoder is dropped (after finish()).
@@ -378,7 +381,7 @@ mod record_impl {
     }
 
     impl FrameSink for WebpSink {
-        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<()> {
+        fn push(&mut self, img: &CapturedImage, _ts: Duration) -> Result<(), CaptureError> {
             let buf = downscaled(img, WEBP_MAX_DIM)?;
             let dims = *self.dims.get_or_insert((buf.width(), buf.height()));
             // Frames must share dimensions; the source is a fixed output/region/window.
@@ -388,11 +391,11 @@ mod record_impl {
             Ok(())
         }
 
-        fn finish(&mut self) -> Result<()> {
+        fn finish(&mut self) -> Result<(), CaptureError> {
             let Some((w, h)) = self.dims else {
                 return Ok(());
             };
-            let mut config = webp::WebPConfig::new().map_err(|_| anyhow::anyhow!("WebP config"))?;
+            let mut config = webp::WebPConfig::new().map_err(|_| CaptureError::msg("WebP config"))?;
             config.quality = 75.0;
             let mut enc = webp::AnimEncoder::new(w, h, &config);
             let step = (1000.0 / self.fps as f64).round() as i32;
@@ -401,8 +404,9 @@ mod record_impl {
             }
             let data = enc
                 .try_encode()
-                .map_err(|e| anyhow::anyhow!("WebP encode: {e:?}"))?;
-            std::fs::write(&self.path, &*data).context("writing the WebP file")?;
+                .map_err(|e| CaptureError::msg(format!("WebP encode: {e:?}")))?;
+            std::fs::write(&self.path, &*data)
+                .map_err(|e| CaptureError::msg(format!("writing the WebP file: {e}")))?;
             Ok(())
         }
     }
@@ -617,7 +621,7 @@ mod record_impl {
             // Overlay connection before capture — see `screenshot -s` for why (EGL).
             let conn = wlr_capture::Connection::connect_to_env()?;
             let caps = capture::capture_all(client, capture::DEFAULT_BUDGET)?;
-            match wlr_capture::overlay::select_region_on(&conn, &caps)? {
+            match wlr_capture::overlay::select_region_on(&conn, &caps, &crate::tr!("overlay-region-hint"))? {
                 Some(region) => region_target(client, region),
                 None => std::process::exit(1), // cancelled
             }

@@ -7,7 +7,9 @@
 
 #[cfg(feature = "tray")]
 mod autostart;
+mod i18n;
 mod ipc;
+mod keymap;
 mod model;
 mod overlay;
 mod proto;
@@ -77,7 +79,7 @@ pub fn main() -> anyhow::Result<()> {
     // Negotiate the UI language from the desktop locale (no-op without the `i18n`
     // feature). Like every other binary in the workspace — without it the tray menu and
     // on-screen hints stay English regardless of `$LANG`.
-    wlr_capture::i18n::init();
+    crate::i18n::init();
     let cli = Cli::parse();
     match cli.cmd {
         None => overlay::run(),

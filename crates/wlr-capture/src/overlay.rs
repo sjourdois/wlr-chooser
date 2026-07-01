@@ -9,7 +9,7 @@
 use crate::capture::OutputCapture;
 use crate::render::Gpu;
 use crate::wl::Region;
-use anyhow::Result;
+use crate::error::{CaptureError, Context, Result};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
@@ -96,6 +96,7 @@ impl Surface {
         &mut self,
         conn: &Connection,
         mode: Mode,
+        hint: &str,
         selection: Option<Region>,
         pointer: Option<(f64, f64)>,
         zoom: f32,
@@ -137,7 +138,7 @@ impl Surface {
             [0.0, 0.0, 0.0, 1.0],
             |ui, _importer| match mode {
                 Mode::Region => {
-                    draw_region_overlay(ui, tex.as_ref(), w, h, lx, ly, selection, pointer)
+                    draw_region_overlay(ui, tex.as_ref(), w, h, lx, ly, selection, pointer, hint)
                 }
                 Mode::Point => draw_point_overlay(
                     ui,
@@ -150,9 +151,10 @@ impl Surface {
                     frozen,
                     img_w,
                     img_h,
+                    hint,
                 ),
                 Mode::Magnify => {
-                    draw_magnify_overlay(ui, tex.as_ref(), w, h, lx, ly, pointer, zoom)
+                    draw_magnify_overlay(ui, tex.as_ref(), w, h, lx, ly, pointer, zoom, hint)
                 }
             },
         );
@@ -172,6 +174,7 @@ fn draw_region_overlay(
     ly: i32,
     selection: Option<Region>,
     pointer: Option<(f64, f64)>,
+    hint: &str,
 ) {
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
@@ -243,7 +246,7 @@ fn draw_region_overlay(
                     );
                     if selection.is_none() {
                         let galley = p.layout_no_wrap(
-                            crate::tr!("overlay-region-hint"),
+                            hint.to_owned(),
                             egui::FontId::proportional(14.0),
                             egui::Color32::WHITE,
                         );
@@ -276,6 +279,7 @@ fn draw_point_overlay(
     frozen: &[u8],
     img_w: usize,
     img_h: usize,
+    hint: &str,
 ) {
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
@@ -376,7 +380,7 @@ fn draw_point_overlay(
 
                 // Hint below the readout.
                 let hint = p.layout_no_wrap(
-                    crate::tr!("overlay-pick-hint"),
+                    hint.to_owned(),
                     egui::FontId::proportional(12.0),
                     egui::Color32::from_white_alpha(200),
                 );
@@ -404,6 +408,7 @@ fn draw_magnify_overlay(
     ly: i32,
     pointer: Option<(f64, f64)>,
     zoom: f32,
+    hint: &str,
 ) {
     let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     egui::CentralPanel::default()
@@ -444,7 +449,7 @@ fn draw_magnify_overlay(
             );
 
             // Zoom readout + quit hint, top-left.
-            let label = format!("{zoom:.1}×  ·  {}", crate::tr!("overlay-magnify-hint"));
+            let label = format!("{zoom:.1}×  ·  {}", hint);
             let galley = p.layout_no_wrap(
                 label,
                 egui::FontId::proportional(13.0),
@@ -469,6 +474,8 @@ struct State {
     surfaces: Vec<Surface>,
     /// Which interaction the overlay is running.
     mode: Mode,
+    /// The caller-provided, localised on-screen hint for this mode.
+    hint: String,
 
     /// Live pointer position (global logical), for the crosshair + hint.
     pointer_pos: Option<(f64, f64)>,
@@ -513,16 +520,16 @@ impl State {
         let ptr = self.pointer_pos;
         let mode = self.mode;
         for s in &mut self.surfaces {
-            s.render(conn, mode, sel, ptr, self.zoom);
+            s.render(conn, mode, &self.hint, sel, ptr, self.zoom);
         }
     }
 }
 
 /// Drag a rectangle on a frozen overlay spanning every captured output; returns the
 /// chosen region (global logical coordinates) or `None` if cancelled (`Esc`).
-pub fn select_region(captures: &[OutputCapture]) -> Result<Option<Region>> {
-    let conn = Connection::connect_to_env()?;
-    select_region_on(&conn, captures)
+pub fn select_region(captures: &[OutputCapture], hint: &str) -> Result<Option<Region>> {
+    let conn = Connection::connect_to_env().context("Wayland connection")?;
+    select_region_on(&conn, captures, hint)
 }
 
 /// [`select_region`] on a caller-provided connection. Use this to chain a second
@@ -530,8 +537,12 @@ pub fn select_region(captures: &[OutputCapture]) -> Result<Option<Region>> {
 /// by the `wl_display` pointer, so a second connection there can alias a freed one and
 /// fail (`eglCreateWindowSurface: BadAlloc`). Sharing one connection (one `EGLDisplay`)
 /// avoids it — the same way the per-output surfaces already share one here.
-pub fn select_region_on(conn: &Connection, captures: &[OutputCapture]) -> Result<Option<Region>> {
-    Ok(run(conn, captures, Mode::Region)?.map(|o| match o {
+pub fn select_region_on(
+    conn: &Connection,
+    captures: &[OutputCapture],
+    hint: &str,
+) -> Result<Option<Region>> {
+    Ok(run(conn, captures, Mode::Region, hint)?.map(|o| match o {
         Outcome::Region(r) => r,
         Outcome::Point { .. } => unreachable!("region mode yields a region"),
     }))
@@ -539,9 +550,9 @@ pub fn select_region_on(conn: &Connection, captures: &[OutputCapture]) -> Result
 
 /// Pick a single pixel on a frozen overlay (with a magnifying loupe); returns its
 /// position in global logical coordinates, or `None` if cancelled (`Esc`).
-pub fn pick_point(captures: &[OutputCapture]) -> Result<Option<(i32, i32)>> {
-    let conn = Connection::connect_to_env()?;
-    pick_point_on(&conn, captures)
+pub fn pick_point(captures: &[OutputCapture], hint: &str) -> Result<Option<(i32, i32)>> {
+    let conn = Connection::connect_to_env().context("Wayland connection")?;
+    pick_point_on(&conn, captures, hint)
 }
 
 /// [`pick_point`] on a caller-provided connection. Establish this connection *before*
@@ -549,8 +560,12 @@ pub fn pick_point(captures: &[OutputCapture]) -> Result<Option<(i32, i32)>> {
 /// and EGL caches its display by the `wl_display` pointer, so an overlay connection
 /// opened afterwards can alias the freed one and fail (`eglCreateWindowSurface:
 /// BadAlloc`). Creating the overlay connection first keeps its `EGLDisplay` valid.
-pub fn pick_point_on(conn: &Connection, captures: &[OutputCapture]) -> Result<Option<(i32, i32)>> {
-    Ok(run(conn, captures, Mode::Point)?.map(|o| match o {
+pub fn pick_point_on(
+    conn: &Connection,
+    captures: &[OutputCapture],
+    hint: &str,
+) -> Result<Option<(i32, i32)>> {
+    Ok(run(conn, captures, Mode::Point, hint)?.map(|o| match o {
         Outcome::Point { x, y } => (x, y),
         Outcome::Region(_) => unreachable!("point mode yields a point"),
     }))
@@ -560,28 +575,33 @@ pub fn pick_point_on(conn: &Connection, captures: &[OutputCapture]) -> Result<Op
 /// the pointer moves, scroll to change the zoom, `Esc` to quit. Returns when the user
 /// quits. Not live (the screen is frozen on entry) — a fullscreen live magnifier
 /// would capture its own output.
-pub fn magnify(captures: &[OutputCapture]) -> Result<()> {
-    let conn = Connection::connect_to_env()?;
-    magnify_on(&conn, captures)
+pub fn magnify(captures: &[OutputCapture], hint: &str) -> Result<()> {
+    let conn = Connection::connect_to_env().context("Wayland connection")?;
+    magnify_on(&conn, captures, hint)
 }
 
 /// [`magnify`] on a caller-provided connection. As with [`pick_point_on`], open this
 /// connection before capturing so the overlay's `EGLDisplay` can't alias a freed one.
-pub fn magnify_on(conn: &Connection, captures: &[OutputCapture]) -> Result<()> {
-    run(conn, captures, Mode::Magnify)?;
+pub fn magnify_on(conn: &Connection, captures: &[OutputCapture], hint: &str) -> Result<()> {
+    run(conn, captures, Mode::Magnify, hint)?;
     Ok(())
 }
 
 /// Run the frozen overlay over `captures` in the given [`Mode`] on `conn`; returns the
 /// user's choice or `None` if cancelled.
-fn run(conn: &Connection, captures: &[OutputCapture], mode: Mode) -> Result<Option<Outcome>> {
-    let (globals, mut queue) = registry_queue_init(conn)?;
+fn run(
+    conn: &Connection,
+    captures: &[OutputCapture],
+    mode: Mode,
+    hint: &str,
+) -> Result<Option<Outcome>> {
+    let (globals, mut queue) = registry_queue_init(conn).context("Wayland registry")?;
     let qh = queue.handle();
 
     let compositor =
-        CompositorState::bind(&globals, &qh).map_err(|e| anyhow::anyhow!("wl_compositor: {e}"))?;
+        CompositorState::bind(&globals, &qh).context("wl_compositor")?;
     let layer_shell =
-        LayerShell::bind(&globals, &qh).map_err(|e| anyhow::anyhow!("layer-shell missing: {e}"))?;
+        LayerShell::bind(&globals, &qh).context("layer-shell missing")?;
 
     let mut state = State {
         registry_state: RegistryState::new(&globals),
@@ -591,6 +611,7 @@ fn run(conn: &Connection, captures: &[OutputCapture], mode: Mode) -> Result<Opti
         pointer: None,
         surfaces: Vec::new(),
         mode,
+        hint: hint.to_string(),
         pointer_pos: None,
         start: None,
         cur: None,
@@ -602,7 +623,7 @@ fn run(conn: &Connection, captures: &[OutputCapture], mode: Mode) -> Result<Opti
 
     // Let outputs (and their logical geometry) come in, then build one overlay per
     // output that we have a frozen capture for.
-    queue.roundtrip(&mut state)?;
+    queue.roundtrip(&mut state).context("Wayland roundtrip")?;
 
     let outputs: Vec<_> = state.output_state.outputs().collect();
     for wl_out in outputs {
@@ -650,11 +671,11 @@ fn run(conn: &Connection, captures: &[OutputCapture], mode: Mode) -> Result<Opti
     }
 
     if state.surfaces.is_empty() {
-        anyhow::bail!("no output to select");
+        return Err(CaptureError::msg("no output to select"));
     }
 
     while !state.done {
-        queue.blocking_dispatch(&mut state)?;
+        queue.blocking_dispatch(&mut state).context("Wayland dispatch")?;
         if state.dirty {
             state.dirty = false;
             state.redraw_all(conn);
@@ -691,7 +712,7 @@ impl CompositorHandler for State {
             .iter_mut()
             .find(|s| s.layer.wl_surface() == surface)
         {
-            s.render(conn, mode, sel, ptr, self.zoom);
+            s.render(conn, mode, &self.hint, sel, ptr, self.zoom);
         }
     }
 
@@ -719,7 +740,7 @@ impl CompositorHandler for State {
             .iter_mut()
             .find(|s| s.layer.wl_surface() == surface)
         {
-            s.render(conn, mode, sel, ptr, self.zoom);
+            s.render(conn, mode, &self.hint, sel, ptr, self.zoom);
         }
     }
 
@@ -769,7 +790,7 @@ impl LayerShellHandler for State {
             if let Some(gpu) = s.gpu.as_ref() {
                 gpu.resize((s.width * s.scale) as i32, (s.height * s.scale) as i32);
             }
-            s.render(conn, mode, sel, ptr, self.zoom);
+            s.render(conn, mode, &self.hint, sel, ptr, self.zoom);
         }
     }
 }
