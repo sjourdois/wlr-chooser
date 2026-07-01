@@ -49,6 +49,7 @@ pub use wayland_client::Connection;
 
 pub mod clipboard;
 pub mod diff;
+pub mod doctor;
 pub mod error;
 pub mod gl;
 pub use error::CaptureError;

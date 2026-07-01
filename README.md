@@ -46,7 +46,8 @@ A wlroots compositor. What you get depends on which capture protocols it exposes
 
 Tools degrade gracefully: where windows aren't capturable they keep their screen features
 and say so. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix (Hyprland, niri,
-labwc, …), or run `wlr-peek doctor` to check your own compositor.
+labwc, …), or run the `doctor` command that every tool exposes (e.g. `wlr-shot doctor`,
+or `wlr-chooser --doctor`) to check your own compositor.
 
 Runtime libraries:
 

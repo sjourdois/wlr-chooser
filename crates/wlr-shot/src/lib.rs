@@ -33,6 +33,8 @@ enum Cmd {
     /// Record an output, a window, or a region — H.264 video, or animated GIF/WebP.
     #[cfg(feature = "video")]
     Record(RecordArgs),
+    /// Report which capture protocols the current compositor supports.
+    Doctor,
     /// Internal: serve a clipboard selection read from stdin. Spawned detached by
     /// `screenshot --clipboard`; not meant to be run by hand.
     #[command(hide = true)]
@@ -110,6 +112,7 @@ pub fn main() {
         Cmd::Screenshot(args) => screenshot(args),
         #[cfg(feature = "video")]
         Cmd::Record(args) => record(args),
+        Cmd::Doctor => wlr_capture::doctor::report().map_err(Into::into),
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {

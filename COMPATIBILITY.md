@@ -2,14 +2,17 @@
 
 `wlr-utils` is built on a handful of Wayland protocols. A compositor that
 advertises them works; one that doesn't, doesn't (there is no portal fallback).
-The quickest way to check your own compositor is:
+The quickest way to check your own compositor is the `doctor` command, which
+**every tool** exposes — a `doctor` subcommand on `wlr-peek` / `wlr-shot` / `wlr-draw`,
+and a `--doctor` flag on `wlr-chooser` / `wlr-switcher`:
 
 ```console
 $ wlr-peek doctor
 ```
 
 It prints which of the protocols below the running compositor advertises, and
-whether screen capture and focus-aware sources will work.
+whether screen capture and focus-aware sources will work. Any tool prints the same
+report, so a single-tool install can produce it too.
 
 ## Protocols used
 

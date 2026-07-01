@@ -95,7 +95,7 @@ pub fn main() {
         Cmd::Watch(args) => watch(args),
         #[cfg(feature = "ocr")]
         Cmd::Grep(args) => grep(args),
-        Cmd::Doctor => doctor(),
+        Cmd::Doctor => wlr_capture::doctor::report().map_err(Into::into),
         Cmd::ClipboardServe { mime } => clipboard_serve(&mime),
     };
     if let Err(e) = res {
@@ -868,99 +868,6 @@ fn focused_output() -> Result<String> {
         .with_context(|| format!("no focused output detected (via {})", backend.name()))
 }
 
-/// Screen- and window-capture support derived from the advertised globals, as
-/// `(screen, window)`. Screen capture needs the core copy-capture manager plus the
-/// output source (wlroots ≥ 0.19 / Sway ≥ 1.11); window capture additionally needs the
-/// foreign-toplevel source (wlroots ≥ 0.20 / Sway ≥ 1.12). This is the capability floor
-/// the whole suite keys off, so it lives in a pure function that can be tested directly.
-fn capture_verdict(globals: &[(String, u32)]) -> (bool, bool) {
-    let has = |iface: &str| globals.iter().any(|(n, _)| n == iface);
-    let screen = has("ext_image_copy_capture_manager_v1")
-        && has("ext_output_image_capture_source_manager_v1");
-    let window = has("ext_foreign_toplevel_image_capture_source_manager_v1");
-    (screen, window)
-}
-
-/// Report the capture-relevant Wayland globals the current compositor advertises,
-/// so users can tell at a glance whether (and how well) the suite will work here.
-fn doctor() -> Result<()> {
-    // (interface, what it enables). Order roughly by importance.
-    const CHECKS: &[(&str, &str)] = &[
-        ("ext_image_copy_capture_manager_v1", "capture frames (core)"),
-        (
-            "ext_output_image_capture_source_manager_v1",
-            "capture an output (core)",
-        ),
-        (
-            "ext_foreign_toplevel_image_capture_source_manager_v1",
-            "capture a window",
-        ),
-        (
-            "ext_foreign_toplevel_list_v1",
-            "enumerate windows (chooser, -w)",
-        ),
-        ("zxdg_output_manager_v1", "accurate output geometry"),
-        (
-            "zwlr_layer_shell_v1",
-            "overlays: region select, loupe, switcher",
-        ),
-        ("zwlr_data_control_manager_v1", "clipboard copy (-c)"),
-        ("zwp_linux_dmabuf_v1", "zero-copy GPU capture"),
-        (
-            "zwp_keyboard_shortcuts_inhibit_manager_v1",
-            "switcher keyboard grab",
-        ),
-    ];
-
-    let globals = wl::advertised_globals().context("listing Wayland globals")?;
-    let version = |iface: &str| globals.iter().find(|(n, _)| n == iface).map(|(_, v)| *v);
-
-    println!("Compositor capabilities (advertised Wayland globals):\n");
-    for (iface, desc) in CHECKS {
-        match version(iface) {
-            Some(v) => println!("  ✓ {iface} (v{v}) — {desc}"),
-            None => println!("  ✗ {iface} — {desc}"),
-        }
-    }
-
-    let (core, window) = capture_verdict(&globals);
-    println!();
-    if core {
-        println!(
-            "Screen capture: supported (screenshots, recording, loupe, colour picker, wlr-draw)."
-        );
-    } else {
-        println!(
-            "Screen capture: UNSUPPORTED — needs ext-image-copy-capture-v1 + the output \
-             source (wlroots ≥ 0.19 / Sway ≥ 1.11; not on Mutter/KWin via this path)."
-        );
-    }
-    if window {
-        println!(
-            "Window capture: supported (wlr-switcher, -w/--pick-window, window mirror/record)."
-        );
-    } else {
-        println!(
-            "Window capture: UNSUPPORTED — needs the foreign-toplevel source \
-             (wlroots ≥ 0.20 / Sway ≥ 1.12). Screen capture still works; only window-only \
-             features are unavailable (wlr-switcher exits with a notice)."
-        );
-    }
-
-    // Focus IPC (active-window / current-output) needs the `focus` engine feature,
-    // which `wlr-peek` pulls in via `ocr`/`watch`.
-    #[cfg(any(feature = "ocr", feature = "watch"))]
-    match wlr_capture::focus::detect() {
-        Some(b) => println!(
-            "Focus IPC: {} detected (-a / --current-output work).",
-            b.name()
-        ),
-        None => println!("Focus IPC: none detected (-a / --current-output unavailable)."),
-    }
-
-    Ok(())
-}
-
 /// The `clipboard-serve` daemon body: read the blob from stdin, then serve it.
 fn clipboard_serve(mime: &str) -> Result<()> {
     use std::io::Read;
@@ -1330,31 +1237,5 @@ mod tests {
         assert_eq!(clean_ocr(raw), "line one\n\nline two");
         assert_eq!(clean_ocr("solo\n\u{0c}"), "solo");
         assert_eq!(clean_ocr("   \n\n"), "");
-    }
-
-    fn globals(names: &[&str]) -> Vec<(String, u32)> {
-        names.iter().map(|n| ((*n).to_string(), 1)).collect()
-    }
-
-    #[test]
-    fn capture_verdict_reads_screen_and_window_floors() {
-        const CORE: [&str; 2] = [
-            "ext_image_copy_capture_manager_v1",
-            "ext_output_image_capture_source_manager_v1",
-        ];
-        const FOREIGN: &str = "ext_foreign_toplevel_image_capture_source_manager_v1";
-
-        // Nothing advertised → neither capture path works.
-        assert_eq!(capture_verdict(&globals(&[])), (false, false));
-        // Core copy-capture + output source → screen only (wlroots 0.19 / Sway 1.11).
-        assert_eq!(capture_verdict(&globals(&CORE)), (true, false));
-        // Add the foreign-toplevel source → window capture too (0.20 / 1.12).
-        let mut all = CORE.to_vec();
-        all.push(FOREIGN);
-        assert_eq!(capture_verdict(&globals(&all)), (true, true));
-        // Only one of the two core managers → screen still unsupported.
-        assert_eq!(capture_verdict(&globals(&CORE[..1])), (false, false));
-        // The screen and window verdicts are independent booleans, as doctor() prints them.
-        assert_eq!(capture_verdict(&globals(&[FOREIGN])), (false, true));
     }
 }

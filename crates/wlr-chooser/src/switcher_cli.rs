@@ -73,12 +73,23 @@ struct Cli {
     /// Include windows with no app-id (system surfaces)
     #[arg(long)]
     include_system: bool,
+    /// Report which capture protocols the current compositor supports, then exit.
+    #[arg(long)]
+    doctor: bool,
 }
 
 pub fn main() {
     let t0 = Instant::now();
     let cli = Cli::parse();
     i18n::init();
+
+    if cli.doctor {
+        if let Err(e) = wlr_capture::doctor::report() {
+            eprintln!("wlr-switcher: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     // Single-instance guard: re-pressing the keybind while we're up is a no-op
     // rather than a stacked overlay (sway runs its bindings over our grab).

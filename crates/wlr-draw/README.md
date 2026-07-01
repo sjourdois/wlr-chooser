@@ -255,7 +255,8 @@ cargo build --release -p wlr-draw
 - **Screen capture** (freeze-frame `Space`, save `w`) — additionally needs
   `ext-image-copy-capture-v1` with the **output** source, i.e. **Sway ≥ 1.11 /
   wlroots ≥ 0.19**. Where it's missing, freeze and save are hidden from the help/tray and
-  plain annotation still works. See [COMPATIBILITY.md](../../COMPATIBILITY.md).
+  plain annotation still works. Run `wlr-draw doctor` to check your own; see
+  [COMPATIBILITY.md](../../COMPATIBILITY.md).
 - **Tray** (`tray` feature, on by default) — a StatusNotifierItem host and `libdbus`.
   `--no-default-features` drops the tray and its D-Bus dependency.
 

@@ -73,6 +73,8 @@ enum Ctl {
     },
     /// Stop the running daemon
     Quit,
+    /// Report which capture protocols the current compositor supports
+    Doctor,
 }
 
 pub fn main() -> anyhow::Result<()> {
@@ -83,6 +85,8 @@ pub fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         None => overlay::run(),
+        // Doctor probes the compositor directly — it doesn't drive the daemon.
+        Some(Ctl::Doctor) => wlr_capture::doctor::report().map_err(Into::into),
         Some(ctl) => ipc::send(&ctl_to_cmd(ctl)?),
     }
 }
@@ -107,5 +111,7 @@ fn ctl_to_cmd(ctl: Ctl) -> anyhow::Result<Cmd> {
         ),
         Ctl::Width { px } => Cmd::Width(px),
         Ctl::Save { path } => Cmd::Save(path),
+        // Not a daemon command — handled directly in `main` before we get here.
+        Ctl::Doctor => unreachable!("Doctor is handled before ctl_to_cmd"),
     })
 }

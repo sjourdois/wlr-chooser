@@ -146,7 +146,7 @@ recording need the `ext-output-image-capture-source-manager-v1` source — **Swa
 wlroots ≥ 0.19**; capturing a **window** (`-w`/`--pick-window`) additionally needs
 `ext-foreign-toplevel-image-capture-source-manager-v1` — **Sway ≥ 1.12 / wlroots ≥ 0.20**.
 `xdg-output` is used for accurate logical geometry when present, and the clipboard (`-c`)
-needs `zwlr_data_control_manager_v1`. Run `wlr-peek doctor` to see what your compositor
+needs `zwlr_data_control_manager_v1`. Run `wlr-shot doctor` to see what your compositor
 exposes; see [COMPATIBILITY.md](../../COMPATIBILITY.md) for the full matrix.
 
 The interactive region selector (`-s`) renders a frozen overlay through EGL/GLES, so

@@ -39,12 +39,23 @@ struct Cli {
     /// print per-source frame/change stats to stderr (debug; no overlay).
     #[arg(long, value_name = "SECS", hide = true)]
     bench_capture: Option<u64>,
+    /// Report which capture protocols the current compositor supports, then exit.
+    #[arg(long)]
+    doctor: bool,
 }
 
 pub fn main() {
     let t0 = Instant::now();
     let cli = Cli::parse();
     i18n::init();
+
+    if cli.doctor {
+        if let Err(e) = wlr_capture::doctor::report() {
+            eprintln!("wlr-chooser: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     if let Some(secs) = cli.bench_capture {
         ui::bench_capture(secs);
